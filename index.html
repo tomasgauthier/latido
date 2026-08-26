@@ -115,6 +115,67 @@
   }
   .fuente .quitar:hover { color: var(--alarma); }
 
+  .motores { display: grid; gap: .5rem; }
+  .motor {
+    display: flex; gap: .8rem; align-items: flex-start; cursor: pointer;
+    border: 1px solid var(--linea); padding: .85rem 1rem; background: var(--papel);
+    transition: border-color .12s, background .12s;
+  }
+  .motor:hover { border-color: var(--tenue); }
+  .motor input { width: auto; margin: .25rem 0 0; accent-color: var(--navy); flex: 0 0 auto; }
+  .motor:has(input:checked) { border-color: var(--navy); background: #fdfdfb; }
+  .motor .nom { font-weight: 500; }
+  .motor .de { color: var(--tenue); font-weight: 400; font-size: .82rem; }
+  .motor .nota { display: block; color: var(--suave); font-size: .8rem; margin-top: .2rem; line-height: 1.5; }
+  .motor > span { min-width: 0; }
+  .sello {
+    font-size: .68rem; letter-spacing: .06em; text-transform: uppercase;
+    padding: .1rem .4rem; border: 1px solid var(--linea); color: var(--tenue);
+    margin-left: .5rem; white-space: nowrap;
+  }
+  .sello.si { color: var(--lima-t); border-color: var(--lima-t); }
+  .casillas { display: flex; flex-wrap: wrap; gap: .5rem 1.1rem; }
+  .casillas label {
+    display: flex; align-items: center; gap: .4rem; margin: 0;
+    font-size: .85rem; color: var(--tinta); cursor: pointer;
+  }
+  .casillas input { width: auto; accent-color: var(--navy); }
+  .casillas label.fijo { color: var(--tenue); cursor: default; }
+  details { margin-top: 1.25rem; }
+  summary { cursor: pointer; color: var(--suave); font-size: .82rem; }
+  summary:hover { color: var(--tinta); }
+  details[open] summary { margin-bottom: .75rem; }
+  hr { border: none; border-top: 1px solid var(--linea); margin: 1.5rem 0; }
+
+  /* ── explorador de carpetas ───────────────────────────────────────────── */
+  .velo {
+    position: fixed; inset: 0; background: rgba(28,25,23,.35);
+    display: none; align-items: center; justify-content: center; padding: 1.5rem; z-index: 9;
+  }
+  .velo[data-abierto] { display: flex; }
+  .explorador {
+    background: var(--papel); border: 1px solid var(--tinta);
+    width: min(34rem, 100%); max-height: 80vh; display: flex; flex-direction: column;
+  }
+  .explorador h3 { margin: 0; padding: 1rem 1.15rem .35rem; font-size: .95rem; font-weight: 600; }
+  .aqui {
+    padding: 0 1.15rem .8rem; font: .8rem ui-monospace, Menlo, monospace;
+    color: var(--suave); word-break: break-all;
+  }
+  .lista { overflow: auto; border-top: 1px solid var(--linea); flex: 1 1 auto; }
+  .lista button {
+    display: block; width: 100%; text-align: left; background: none; border: none;
+    border-bottom: 1px solid #f7f6f3; padding: .55rem 1.15rem; cursor: pointer;
+    font: inherit; font-size: .875rem; color: var(--tinta);
+  }
+  .lista button:hover { background: var(--crema); }
+  .lista .arriba { color: var(--suave); }
+  .lista .nada { padding: 1.15rem; color: var(--tenue); font-size: .85rem; }
+  .pie-exp {
+    display: flex; gap: .6rem; justify-content: flex-end;
+    padding: .85rem 1.15rem; border-top: 1px solid var(--linea);
+  }
+
   /* ── bitácora ─────────────────────────────────────────────────────────── */
   .dia {
     font: 500 .7rem/1 ui-monospace, Menlo, monospace; color: var(--tenue);
@@ -216,27 +277,15 @@
       <h2>Ritmo</h2>
       <p class="intro">Cada cuánto mira por su cuenta. Esto no afecta cuánto tarda en responderte a ti — eso es inmediato.</p>
       <div class="caja">
-        <div class="par">
-          <div>
-            <label for="cadencia">Cadencia</label>
-            <select id="cadencia">
-              <option value="900">15 minutos — prueba</option>
-              <option value="1800">30 minutos — prueba</option>
-              <option value="14400">4 horas</option>
-              <option value="43200">12 horas</option>
-              <option value="86400">Una vez al día</option>
-            </select>
-          </div>
-          <div>
-            <label for="modelo">Modelo</label>
-            <select id="modelo">
-              <option value="sonnet">Sonnet — recomendado</option>
-              <option value="haiku">Haiku — más barato</option>
-              <option value="opus">Opus — caro</option>
-            </select>
-          </div>
-        </div>
-        <p class="ayuda">Su trabajo es decidir <em>no</em> hablar, y ahí los modelos chicos se van a un extremo: o hablan siempre o no hablan nunca.</p>
+        <label for="cadencia">Cadencia</label>
+        <select id="cadencia">
+          <option value="900">Cada 15 minutos — para probarlo</option>
+          <option value="1800">Cada media hora — para probarlo</option>
+          <option value="14400">Cada 4 horas</option>
+          <option value="43200">Dos veces al día</option>
+          <option value="86400">Una vez al día</option>
+        </select>
+        <p class="ayuda">Empieza corto para ver cómo se porta, y súbelo cuando te convenza. Cada latido cuesta; escuchar tus mensajes no.</p>
       </div>
     </section>
 
@@ -275,19 +324,37 @@
       <p class="intro">Dónde deja lo que escribe sobre tu vida: la bitácora de cada latido y su memoria entre uno y otro.</p>
       <div class="caja">
         <label for="registro">Carpeta del registro</label>
-        <input id="registro" class="mono" placeholder="vacío = dentro de este repositorio">
+        <div class="fila">
+          <input id="registro" class="crece mono" placeholder="vacío = dentro de este repositorio">
+          <button class="act" id="btn-registro">Elegir…</button>
+        </div>
         <p class="ayuda">Apúntalo a tu bóveda de Obsidian y lo lees ahí como cualquier otra nota. Deja <em>bitacora/</em> con un archivo por día y <em>estado.md</em> con su memoria. Fuera del repositorio, además, no hay riesgo de publicar tu diario junto con el código.</p>
       </div>
     </section>
 
     <section class="panel" data-panel="motor">
       <h2>Motor</h2>
-      <p class="intro">Qué CLI despierta en cada latido. Sirve cualquiera que reciba un prompt como argumento y devuelva texto por stdout.</p>
+      <p class="intro">Qué programa despierta en cada latido. Se detecta solo cuáles tienes instalados.</p>
       <div class="caja">
-        <label for="cli">Invocación</label>
-        <textarea id="cli" rows="12" spellcheck="false"></textarea>
-        <p class="ayuda"><em>{prompt}</em> se reemplaza por las instrucciones completas, <em>{modelo}</em> por lo que elijas en Ritmo, y <em>{herramientas}</em> se expande en un argumento por herramienta. <em>flag_carpeta</em> se repite por cada fuente — déjalo vacío si tu CLI no tiene ese concepto.</p>
-        <p class="ayuda">Lo único innegociable es que el modelo pueda <em>escribir un archivo</em>: <em>salida.txt</em> es su única voz.</p>
+        <div class="motores" id="motores"></div>
+
+        <hr>
+        <label for="modelo">Modelo</label>
+        <div id="caja-modelo"></div>
+        <p class="ayuda" id="ayuda-modelo"></p>
+
+        <hr>
+        <label>Qué puede hacer</label>
+        <div class="casillas" id="herramientas"></div>
+        <label for="extras" style="margin-top:1rem">Otras herramientas, una por línea</label>
+        <textarea id="extras" rows="3" spellcheck="false" placeholder="mcp__loquesea__accion"></textarea>
+        <p class="ayuda">Si tienes servidores MCP, sus herramientas van acá con el nombre exacto. <em>Write</em> no se puede quitar: escribir un archivo es la única forma que tiene de hablarte.</p>
+
+        <details id="avanzado">
+          <summary>Otro programa que no está en la lista</summary>
+          <textarea id="cli" rows="11" spellcheck="false"></textarea>
+          <p class="ayuda"><em>{prompt}</em> se reemplaza por las instrucciones, <em>{modelo}</em> por lo de arriba, y <em>{herramientas}</em> se expande en un argumento por herramienta. <em>flag_carpeta</em> se repite por cada fuente; vacío si tu programa no tiene ese concepto.</p>
+        </details>
       </div>
     </section>
 
@@ -307,6 +374,18 @@
       </div>
     </section>
   </main>
+</div>
+
+<div class="velo" id="velo">
+  <div class="explorador">
+    <h3>Elegir carpeta</h3>
+    <div class="aqui" id="aqui">~</div>
+    <div class="lista" id="lista"></div>
+    <div class="pie-exp">
+      <button class="act" id="exp-cancelar">Cancelar</button>
+      <button class="act fuerte" id="exp-elegir">Usar esta carpeta</button>
+    </div>
+  </div>
 </div>
 
 <div class="barra" id="barra">
@@ -345,9 +424,17 @@ const decir = (t, ms = 3000) => {
   }, ms);
 };
 
+const motorElegido = () => (document.querySelector('input[name=motor]:checked') || {}).value || 'otro';
+
 const recoger = () => ({
   cadencia: $('#cadencia').value,
-  modelo: $('#modelo').value,
+  motor: motorElegido(),
+  modelo: ($('#modelo') || {}).value || '',
+  herramientas: [
+    'Write',
+    ...$$('#herramientas input:checked').map(c => c.value),
+    ...$('#extras').value.split('\n')
+  ],
   token: $('#token').value,
   registro: $('#registro').value,
   cli: $('#cli').value,
@@ -371,13 +458,15 @@ function fila(f = { ruta: '', que_es: '' }) {
   const d = document.createElement('div');
   d.className = 'fuente';
   d.innerHTML = `<input class="ruta" placeholder="~/carpeta">`
+              + `<button class="act elegir">Elegir…</button>`
               + `<input class="quees crece" placeholder="qué es, en una frase">`
               + `<button class="quitar" title="quitar">×</button>`;
-  const [ruta, quees, quitar] = d.children;
+  const [ruta, elegir, quees, quitar] = d.children;
   ruta.value = f.ruta; ruta.title = f.ruta;
   quees.value = f.que_es;
   ruta.oninput = () => { ruta.title = ruta.value; revisar(); };
   quees.oninput = revisar;
+  elegir.onclick = () => explorar(ruta.value, v => { ruta.value = v; ruta.title = v; revisar(); });
   quitar.onclick = () => { d.remove(); revisar(); };
   $('#fuentes').append(d);
 }
@@ -405,10 +494,61 @@ function pintarBitacora(latidos) {
   $('#bitacora').innerHTML = html;
 }
 
+function pintarMotores(e) {
+  $('#motores').innerHTML = '';
+  for (const m of e.motores.concat([{ id: 'otro', nombre: 'Otro programa', de: '',
+        nota: 'Lo defines tú, más abajo.', instalado: null }])) {
+    const l = document.createElement('label');
+    l.className = 'motor';
+    const sello = m.instalado === null ? ''
+      : `<span class="sello ${m.instalado ? 'si' : ''}">${m.instalado ? 'instalado' : 'no está'}</span>`;
+    l.innerHTML = `<input type="radio" name="motor" value="${m.id}">`
+      + `<span><span class="nom">${m.nombre}</span>`
+      + (m.de ? ` <span class="de">· ${m.de}</span>` : '') + sello
+      + `<span class="nota">${m.nota}</span></span>`;
+    l.querySelector('input').checked = m.id === e.motor;
+    l.querySelector('input').onchange = () => { pintarModelo(e); revisar(); };
+    $('#motores').append(l);
+  }
+}
+
+function pintarModelo(e, valor) {
+  const id = motorElegido();
+  const m = e.motores.find(x => x.id === id);
+  const actual = valor !== undefined ? valor : (($('#modelo') || {}).value ?? e.modelo);
+  if (m && m.modelos) {
+    $('#caja-modelo').innerHTML = '<select id="modelo">'
+      + m.modelos.map(([v, n]) => `<option value="${v}">${n}</option>`).join('') + '</select>';
+    $('#modelo').value = m.modelos.some(([v]) => v === actual) ? actual : m.modelos[0][0];
+    $('#ayuda-modelo').innerHTML = 'Su trabajo es decidir <em>no</em> hablar, y ahí los modelos chicos se van a un extremo: o hablan siempre o no hablan nunca.';
+  } else {
+    $('#caja-modelo').innerHTML = '<input id="modelo" class="mono" placeholder="vacío = el que traiga por omisión">';
+    $('#modelo').value = actual || '';
+    $('#ayuda-modelo').textContent = m
+      ? 'Escríbelo como lo pida ese programa. Vacío usa el suyo por omisión.'
+      : 'Lo que reemplace a {modelo} en la invocación de abajo.';
+  }
+  $('#modelo').addEventListener('input', revisar);
+  $('#avanzado').open = id === 'otro';
+}
+
+function pintarHerramientas(e) {
+  const puestas = new Set(e.herramientas);
+  $('#herramientas').innerHTML = e.basicas.map(h => {
+    const fijo = h === 'Write';
+    return `<label class="${fijo ? 'fijo' : ''}"><input type="checkbox" value="${h}"`
+      + `${puestas.has(h) || fijo ? ' checked' : ''}${fijo ? ' disabled' : ''}> ${h}</label>`;
+  }).join('');
+  $$('#herramientas input').forEach(c => c.onchange = revisar);
+  $('#extras').value = e.herramientas.filter(h => !e.basicas.includes(h)).join('\n');
+}
+
 function pintar(e) {
   estado = e;
   $('#cadencia').value = e.cadencia;
-  $('#modelo').value = e.modelo;
+  pintarMotores(e);
+  pintarModelo(e, e.modelo);
+  pintarHerramientas(e);
   $('#chat').value = e.chat_id;
   $('#registro').value = e.registro || '';
   $('#cli').value = e.cli || '';
@@ -434,6 +574,51 @@ function pintar(e) {
   limpio = JSON.stringify(recoger());
   revisar();
 }
+
+// El navegador no entrega rutas absolutas desde un selector de archivos, así
+// que el disco lo navega el servidor, que sí vive en esta máquina.
+let dondeEstoy = '', alElegir = null;
+
+async function explorar(desde, cuando) {
+  alElegir = cuando;
+  $('#velo').toggleAttribute('data-abierto', true);
+  await mover(desde || '~');
+}
+
+async function mover(ruta) {
+  const d = await (await fetch('/api/carpetas?ruta=' + encodeURIComponent(ruta))).json();
+  dondeEstoy = d.ruta;
+  $('#aqui').textContent = d.bonita;
+  const lista = $('#lista');
+  lista.innerHTML = '';
+  if (d.padre) {
+    const b = document.createElement('button');
+    b.className = 'arriba'; b.textContent = '↑  subir un nivel';
+    b.onclick = () => mover(d.padre);
+    lista.append(b);
+  }
+  if (!d.carpetas.length) {
+    lista.insertAdjacentHTML('beforeend', '<p class="nada">No hay carpetas aquí dentro.</p>');
+  }
+  for (const c of d.carpetas) {
+    const b = document.createElement('button');
+    b.textContent = c;
+    b.onclick = () => mover(d.ruta + '/' + c);
+    lista.append(b);
+  }
+  lista.scrollTop = 0;
+}
+
+const cerrarExp = () => $('#velo').removeAttribute('data-abierto');
+$('#exp-cancelar').onclick = cerrarExp;
+$('#velo').onclick = e => { if (e.target === $('#velo')) cerrarExp(); };
+$('#exp-elegir').onclick = () => {
+  const casa = estado.casa || '';
+  const bonita = casa && dondeEstoy.startsWith(casa) ? '~' + dondeEstoy.slice(casa.length) : dondeEstoy;
+  if (alElegir) alElegir(bonita);
+  cerrarExp();
+};
+addEventListener('keydown', e => { if (e.key === 'Escape') cerrarExp(); });
 
 const cargar = async () => pintar(await api('/api/estado'));
 
@@ -484,7 +669,9 @@ $('#btn-detectar').onclick = async () => {
 };
 
 $('#btn-fuente').onclick = () => { fila(); revisar(); };
-for (const id of ['#cadencia', '#modelo', '#token', '#registro', '#cli', '#prompt'])
+$('#btn-registro').onclick = () =>
+  explorar($('#registro').value, v => { $('#registro').value = v; revisar(); });
+for (const id of ['#cadencia', '#token', '#registro', '#cli', '#extras', '#prompt'])
   $(id).addEventListener('input', revisar);
 
 addEventListener('keydown', e => {

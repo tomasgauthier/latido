@@ -44,12 +44,14 @@ Everything else happens on that page, in this order:
 1. **Telegram** — paste the bot token and save. Then send the bot anything from
    your own Telegram and hit **Detectar**: it captures the chat by itself. Until
    that step is done, the latido accepts messages from nobody.
-2. **Qué mira** (what it watches) — the folders that matter, and next to each,
-   what it is in one sentence. That description is what it uses to know what to
-   look for in there.
+2. **Fuentes** (sources) — the folders that matter. An *Elegir…* button opens a
+   folder browser, so you never type a path. Next to each, what it is in one
+   sentence — that description is what it uses to know what to look for there.
 3. **Ritmo** (pace) — how often it looks on its own. Four hours is a good
    starting point; half an hour is useful for the first day of testing.
-4. **Prender** (turn on).
+4. **Motor** (engine) — which program wakes up on each beat. Installed ones are
+   detected for you; if it's Claude Code, change nothing.
+5. **Prender** (turn on).
 
 No paths are hardcoded anywhere: the launchd agents are generated with the
 location of the repo you just cloned, and the Claude Code binary is looked up in

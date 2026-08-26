@@ -38,11 +38,14 @@ Todo lo demás se hace desde esa página, en este orden:
 1. **Telegram** — pega el token del bot y guarda. Después escríbele cualquier
    cosa al bot desde tu Telegram y aprieta **Detectar**: captura solo el chat.
    Hasta que ese paso no esté hecho, el latido no acepta mensajes de nadie.
-2. **Qué mira** — las carpetas que le importan, y al lado qué es cada una en una
-   frase. Esa descripción es la que usa para saber qué buscar ahí.
+2. **Fuentes** — las carpetas que le importan. Hay un botón *Elegir…* que abre
+   un explorador: no hace falta escribir rutas. Al lado de cada una, qué es en
+   una frase — esa descripción es la que usa para saber qué buscar ahí.
 3. **Ritmo** — cada cuánto mira por su cuenta. Cuatro horas es un buen punto de
    partida; media hora sirve para probarlo el primer día.
-4. **Prender**.
+4. **Motor** — qué programa despierta en cada latido. Se detecta solo cuáles
+   tienes instalados; si es Claude Code, no toques nada.
+5. **Prender**.
 
 No hay rutas escritas a mano en ninguna parte: los agentes de launchd se generan
 con la ubicación del repo que acabas de clonar, y el binario de Claude Code se

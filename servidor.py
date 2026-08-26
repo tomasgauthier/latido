@@ -12,6 +12,7 @@ import os
 import pathlib
 import plistlib
 import re
+import shutil
 import subprocess
 import urllib.parse
 import urllib.request
@@ -120,6 +121,8 @@ def latidos(n=25):
 def estado():
     cfg = leer()
     tg = cfg.get("telegram") or {}
+    cli = cfg.get("cli") or CLI_POR_OMISION
+    elegido, lista = catalogo(cli)
     return {
         "cadencia": cfg.get("cadencia", 86400),
         "modelo": cfg.get("modelo", "sonnet"),
@@ -128,7 +131,12 @@ def estado():
         "hay_token": bool(tg.get("token")),      # nunca el token mismo
         "chat_id": tg.get("chat_id") or "",
         "registro": cfg.get("registro") or "",
-        "cli": json.dumps(cfg.get("cli") or CLI_POR_OMISION, indent=2, ensure_ascii=False),
+        "cli": json.dumps(cli, indent=2, ensure_ascii=False),
+        "motor": elegido,
+        "motores": lista,
+        "casa": str(pathlib.Path.home()),
+        "basicas": BASICAS,
+        "herramientas": cfg.get("herramientas") or BASICAS,
         "corriendo": corriendo(),
         "escuchando": vivo(OREJA),
         "ultimo": ULTIMO.read_text().strip() if ULTIMO.exists() else "",
@@ -136,18 +144,55 @@ def estado():
     }
 
 
-CLI_POR_OMISION = {
-    "bin": "claude",
-    "args": ["-p", "{prompt}", "--model", "{modelo}",
-             "--permission-mode", "acceptEdits",
-             "--allowedTools", "{herramientas}"],
-    "flag_carpeta": "--add-dir",
-}
+# Los motores conocidos. Las banderas están leídas del --help de cada CLI, no
+# inventadas; donde no se probó a fondo, se dice.
+MOTORES = [
+    {"id": "claude", "nombre": "Claude Code", "de": "Anthropic", "bin": "claude",
+     "args": ["-p", "{prompt}", "--model", "{modelo}",
+              "--permission-mode", "acceptEdits",
+              "--allowedTools", "{herramientas}"],
+     "flag_carpeta": "--add-dir",
+     "modelos": [["sonnet", "Sonnet — recomendado"],
+                 ["haiku", "Haiku — más barato"],
+                 ["opus", "Opus — el caro"]],
+     "nota": "Probado. Es el motor con el que se escribió esto."},
+    {"id": "codex", "nombre": "Codex CLI", "de": "OpenAI", "bin": "codex",
+     "args": ["exec", "{prompt}", "-m", "{modelo}",
+              "-s", "workspace-write", "--approve-for-me"],
+     "flag_carpeta": "--add-dir", "modelos": None,
+     "nota": "Banderas leídas de su ayuda, sin probar a fondo. Deja el modelo "
+             "vacío para usar el suyo por omisión."},
+    {"id": "opencode", "nombre": "opencode", "de": "código abierto", "bin": "opencode",
+     "args": ["run", "{prompt}", "-m", "{modelo}"],
+     "flag_carpeta": "", "modelos": None,
+     "nota": "El modelo va como proveedor/modelo. No tiene concepto de carpetas "
+             "permitidas: las lee del prompt con sus propias herramientas."},
+]
+CLI_POR_OMISION = {k: MOTORES[0][k] for k in ("bin", "args", "flag_carpeta")}
+
+
+def catalogo(cli):
+    """Los motores, con cuál está instalado y cuál es el elegido."""
+    elegido = "otro"
+    for m in MOTORES:
+        if m["bin"] == (cli or {}).get("bin"):
+            elegido = m["id"]
+    return elegido, [{**m, "instalado": bool(shutil.which(m["bin"]))} for m in MOTORES]
+
+
+BASICAS = ["Read", "Glob", "Grep", "Write", "Edit"]
 
 
 def guardar(d):
     cfg = leer()
-    if d.get("cli") is not None:
+
+    motor = d.get("motor")
+    if motor and motor != "otro":
+        elegido = next((m for m in MOTORES if m["id"] == motor), None)
+        if not elegido:
+            return {"ok": False, "error": "ese motor no existe"}
+        cfg["cli"] = {k: elegido[k] for k in ("bin", "args", "flag_carpeta")}
+    elif d.get("cli") is not None:
         # Un JSON malo acá deja al latido mudo y sin avisar, así que no se
         # guarda nada hasta que esté bien formado.
         try:
@@ -157,6 +202,12 @@ def guardar(d):
         except Exception as e:
             return {"ok": False, "error": f"el motor no se guardó: {e}"}
         cfg["cli"] = cli
+
+    if d.get("herramientas") is not None:
+        h = [x.strip() for x in d["herramientas"] if x.strip()]
+        if "Write" not in h:
+            h.append("Write")      # salida.txt es su única voz: no es opcional
+        cfg["herramientas"] = h
     cfg["cadencia"] = int(d.get("cadencia") or 86400)
     cfg["modelo"] = d.get("modelo") or "sonnet"
     cfg["fuentes"] = [f for f in (d.get("fuentes") or []) if f.get("ruta")]
@@ -204,6 +255,29 @@ def detectar():
     return {"ok": False, "error": "no hay mensajes. Escríbele algo al bot y reintenta."}
 
 
+def carpetas(ruta):
+    """Lista subcarpetas para el explorador de la página.
+
+    El navegador no puede entregar rutas absolutas —un selector de archivos da
+    el nombre y nada más—, así que navegar el disco lo hace el servidor, que
+    sí vive en esta máquina. Solo lee nombres de directorios.
+    """
+    d = pathlib.Path(os.path.expanduser(ruta or "~")).resolve()
+    if not d.is_dir():
+        d = pathlib.Path.home()
+    try:
+        hijas = sorted((x.name for x in d.iterdir()
+                        if x.is_dir() and not x.name.startswith(".")),
+                       key=str.lower)
+    except PermissionError:
+        hijas = []
+    casa = str(pathlib.Path.home())
+    bonita = str(d).replace(casa, "~", 1) if str(d).startswith(casa) else str(d)
+    return {"ruta": str(d), "bonita": bonita,
+            "padre": str(d.parent) if d.parent != d else None,
+            "carpetas": hijas}
+
+
 def accion(cual):
     if cual == "prender":
         return {"ok": instalar(leer().get("cadencia", 86400))}
@@ -237,6 +311,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.responder((REPO / "logo.svg").read_bytes(), "image/svg+xml")
         if ruta == "/api/estado":
             return self.responder(estado())
+        if ruta == "/api/carpetas":
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            return self.responder(carpetas((q.get("ruta") or [""])[0]))
         self.send_error(404)
 
     def do_POST(self):
