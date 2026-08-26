@@ -139,9 +139,38 @@ launchctl bootout gui/$UID/local.latido.escucha  # apagar la oreja
 tail -f /tmp/local.latido.escucha.log            # qué oye
 ```
 
-## Por qué esto no incumple nada
+## Otro CLI, otro proveedor
 
-`claude -p` es el modo headless documentado de Claude Code: mismo binario, misma
-sesión autenticada, sin humano al teclado. Correrlo desde `launchd` es usar el
-cliente de Anthropic en su modo no interactivo. Distinto sería exportar la
-credencial de la suscripción hacia un cliente de terceros; eso no pasa acá.
+El latido no le pide nada especial a nadie: ejecuta el CLI oficial de tu
+proveedor, en su modo no interactivo, con tu propia sesión ya iniciada. No
+extrae credenciales, no las reenvía a ningún lado, no monta un proxy, no
+automatiza una interfaz y no raspa nada. Es exactamente lo que escribirías tú en
+la terminal — solo que lo escribe un temporizador.
+
+Por eso la invocación es configurable. Cualquier CLI que **reciba un prompt como
+argumento y devuelva texto por stdout** sirve:
+
+```json
+"cli": {
+  "bin": "claude",
+  "args": ["-p", "{prompt}", "--model", "{modelo}",
+           "--permission-mode", "acceptEdits",
+           "--allowedTools", "{herramientas}"],
+  "flag_carpeta": "--add-dir"
+}
+```
+
+- `{prompt}` se reemplaza por las instrucciones completas.
+- `{modelo}` por lo que elijas en la página.
+- `{herramientas}` se expande en varios argumentos, uno por herramienta.
+- `flag_carpeta` se repite por cada fuente. Déjalo vacío si tu CLI no tiene ese
+  concepto — entonces el modelo lee las rutas por el prompt y con sus propias
+  herramientas.
+
+Lo único que el latido necesita del otro lado es que el modelo **pueda escribir
+un archivo**: `salida.txt` es su único canal de voz.
+
+**Sobre los términos de servicio:** cada proveedor tiene los suyos y cambian.
+Esto no los esquiva de ninguna manera —usa el cliente oficial tal como viene—,
+pero si vas a correrlo de forma desatendida, la responsabilidad de leer los
+términos de tu proveedor es tuya, no de este repositorio.

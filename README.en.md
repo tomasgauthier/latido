@@ -13,10 +13,10 @@ It runs on Claude Code in headless mode. **It does not depend on any open
 session**: every beat is a fresh session that lives for seconds and dies, and
 continuity lives in `estado.md`. Close everything and it keeps beating.
 
-> The agent's own instructions (`prompt.md`) ship in Spanish, so it will write
-> to you in Spanish out of the box. That file is plain text and it *is* the
-> whole personality — rewrite it in your language and everything else works
-> unchanged.
+> `prompt.md` ships in Spanish, so out of the box the agent writes to you in
+> Spanish. An English version is included — `cp prompt.en.md prompt.md` and
+> you're done. That file is plain text and it *is* the whole personality;
+> rewrite it in any language and everything else works unchanged.
 
 ## What you need
 
@@ -146,10 +146,38 @@ launchctl bootout gui/$UID/local.latido.escucha  # stop the ear
 tail -f /tmp/local.latido.escucha.log            # what it hears
 ```
 
-## Why this breaks no rules
+## Another CLI, another provider
 
-`claude -p` is Claude Code's documented headless mode: same binary, same
-authenticated session, no human at the keyboard. Running it from `launchd` is
-using Anthropic's own client non-interactively. Exporting your subscription
-credential into a third-party client would be a different thing entirely; that
-does not happen here.
+The latido asks nothing special of anyone: it runs your provider's official CLI,
+in its non-interactive mode, with your own already-authenticated session. It
+does not extract credentials, forward them anywhere, stand up a proxy, drive a
+user interface, or scrape anything. It is exactly what you would type in your
+terminal — only a timer types it.
+
+That's why the invocation is configurable. Any CLI that **takes a prompt as an
+argument and returns text on stdout** will do:
+
+```json
+"cli": {
+  "bin": "claude",
+  "args": ["-p", "{prompt}", "--model", "{modelo}",
+           "--permission-mode", "acceptEdits",
+           "--allowedTools", "{herramientas}"],
+  "flag_carpeta": "--add-dir"
+}
+```
+
+- `{prompt}` is replaced by the full instructions.
+- `{modelo}` by whatever you pick on the page.
+- `{herramientas}` expands into several arguments, one per tool.
+- `flag_carpeta` is repeated once per source. Leave it empty if your CLI has no
+  such concept — the model then learns the paths from the prompt and reads them
+  with its own tools.
+
+The only thing the latido needs from the other side is that the model **can
+write a file**: `salida.txt` is its one and only voice.
+
+**On terms of service:** every provider has its own and they change. This works
+around nothing — it uses the official client exactly as shipped — but if you're
+going to run it unattended, reading your provider's terms is on you, not on this
+repository.
