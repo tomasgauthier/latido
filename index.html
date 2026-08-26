@@ -431,8 +431,7 @@ const recoger = () => ({
   motor: motorElegido(),
   modelo: ($('#modelo') || {}).value || '',
   herramientas: [
-    'Write',
-    ...$$('#herramientas input:checked').map(c => c.value),
+    ...$$('#herramientas input:checked').map(c => c.value),   // Write incluido
     ...$('#extras').value.split('\n')
   ],
   token: $('#token').value,
@@ -515,7 +514,11 @@ function pintarMotores(e) {
 function pintarModelo(e, valor) {
   const id = motorElegido();
   const m = e.motores.find(x => x.id === id);
-  const actual = valor !== undefined ? valor : (($('#modelo') || {}).value ?? e.modelo);
+  let actual = valor !== undefined ? valor : (($('#modelo') || {}).value ?? e.modelo);
+  // Al cambiar de motor, no arrastres el modelo del anterior: "sonnet" en el
+  // campo de Codex es un modelo de Anthropic que allá no existe.
+  const deOtro = e.motores.some(x => (x.modelos || []).some(([v]) => v === actual));
+  if (!(m && m.modelos) && deOtro) actual = '';
   if (m && m.modelos) {
     $('#caja-modelo').innerHTML = '<select id="modelo">'
       + m.modelos.map(([v, n]) => `<option value="${v}">${n}</option>`).join('') + '</select>';

@@ -74,8 +74,13 @@ def escuchar():
         else:
             ajenos += 1
 
-    if ultimo is not None:          # se consume igual: un mensaje ajeno no se
-        OFFSET.write_text(str(ultimo + 1))   # reintenta en cada vuelta
+    # Mientras no haya chat configurado no se confirma nada ante Telegram: si se
+    # confirmara, los mensajes que el dueño manda para que "Detectar" los vea ya
+    # estarían consumidos y el botón no encontraría ninguno, para siempre.
+    if ultimo is not None and propio:
+        OFFSET.write_text(str(ultimo + 1))   # un ajeno no se reintenta después
+    elif not propio:
+        time.sleep(10)              # sin offset que avanzar, no gires en vacío
     if ajenos:
         log(f"{ajenos} mensaje(s) de un chat ajeno, descartados")
     if not nuevos:
@@ -86,7 +91,14 @@ def escuchar():
             f.write(t + "\n\n---\n\n")
     log(f"{len(nuevos)} mensaje(s) → latido")
     # Sincrónico a propósito: mientras piensa no queremos disparar otro.
-    subprocess.run([sys.executable, str(REPO / "latido.py")], cwd=REPO)
+    try:
+        # Con techo: si el latido se cuelga —un CLI que deja nietos con el pipe
+        # abierto, por ejemplo— la oreja quedaría sorda y KeepAlive no la
+        # revive, porque el proceso no murió.
+        subprocess.run([sys.executable, str(REPO / "latido.py")],
+                       cwd=REPO, timeout=900)
+    except subprocess.TimeoutExpired:
+        log("el latido se pasó de 15 minutos; sigo escuchando")
 
 
 if __name__ == "__main__":

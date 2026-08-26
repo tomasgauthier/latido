@@ -14,6 +14,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+import time
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -73,7 +74,14 @@ def agente(label, guion, **extra):
         "StandardErrorPath": f"/tmp/{label}.log",
         **extra,
     }))
+    # bootout no es instantáneo: si arrancamos el nuevo antes de que muera el
+    # viejo, quedan dos orejas consultando el mismo bot y Telegram responde 409
+    # a las dos. Se espera a que el nombre desaparezca de verdad.
     lc("bootout", f"{GUI}/{label}")
+    for _ in range(50):
+        if not vivo(label):
+            break
+        time.sleep(0.2)
     return lc("bootstrap", GUI, str(p)).returncode == 0
 
 
@@ -207,9 +215,11 @@ def guardar(d):
         h = [x.strip() for x in d["herramientas"] if x.strip()]
         if "Write" not in h:
             h.append("Write")      # salida.txt es su única voz: no es opcional
-        cfg["herramientas"] = h
+        cfg["herramientas"] = list(dict.fromkeys(h))      # sin repetidos
     cfg["cadencia"] = int(d.get("cadencia") or 86400)
-    cfg["modelo"] = d.get("modelo") or "sonnet"
+    # Vacío es una respuesta válida: significa "usa el modelo por omisión del
+    # motor". Forzar "sonnet" acá le mandaba un modelo de Anthropic a Codex.
+    cfg["modelo"] = (d.get("modelo") or "").strip()
     cfg["fuentes"] = [f for f in (d.get("fuentes") or []) if f.get("ruta")]
     cfg["registro"] = (d.get("registro") or "").strip()
     tg = cfg.setdefault("telegram", {})
@@ -285,7 +295,8 @@ def accion(cual):
         return {"ok": apagar()}
     if cual == "disparar":
         if corriendo():
-            lc("kickstart", "-k", f"{GUI}/{LATIDO}")
+            # sin -k: si hay un latido en vuelo no se le mata, se deja terminar
+            lc("kickstart", f"{GUI}/{LATIDO}")
         else:
             subprocess.Popen(["/usr/bin/python3", str(REPO / "latido.py")], cwd=REPO)
         return {"ok": True}

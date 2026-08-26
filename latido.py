@@ -16,6 +16,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import time
 import urllib.parse
 import urllib.request
 
@@ -85,15 +86,25 @@ def invocacion(cfg, prompt):
     binario = buscar(cli["bin"])
     if not binario:
         return None
-    reemplazo = {"{prompt}": prompt, "{modelo}": cfg.get("modelo", "sonnet")}
+    reemplazo = {"{prompt}": prompt, "{modelo}": (cfg.get("modelo") or "").strip()}
     herramientas = cfg.get("herramientas") or ["Read", "Glob", "Grep", "Write", "Edit"]
 
     cmd = [binario]
     for a in cli["args"]:
         if a == "{herramientas}":
             cmd += herramientas          # se expande en varios argumentos
+        elif a in reemplazo:
+            v = reemplazo[a]
+            if v == "":
+                # Vacío significa "usa el tuyo por omisión", así que se va el
+                # valor Y su bandera: pasar `-m ""` no es lo mismo que no pasar
+                # `-m`, y varios CLI se caen con el argumento en blanco.
+                if cmd and cmd[-1].startswith("-"):
+                    cmd.pop()
+            else:
+                cmd.append(v)
         else:
-            cmd.append(reemplazo.get(a, a) if a in reemplazo else a)
+            cmd.append(a)
     if cli.get("flag_carpeta"):
         for f in cfg.get("fuentes") or []:
             cmd += [cli["flag_carpeta"], os.path.expanduser(f["ruta"])]
@@ -109,22 +120,40 @@ def enviar(cfg, texto):
         return False
     # Sin parse_mode a propósito: el prompt exige texto plano, y así un
     # asterisco suelto no rompe el envío entero.
-    url = API.format(tg["token"], "sendMessage") + "?" + urllib.parse.urlencode(
-        {"chat_id": tg["chat_id"], "text": texto})
+    # POST, no GET: un mensaje largo en la URL revienta el límite de longitud y
+    # falla en silencio.
+    datos = urllib.parse.urlencode(
+        {"chat_id": tg["chat_id"], "text": texto}).encode()
     try:
-        with urllib.request.urlopen(url, timeout=20) as r:
+        with urllib.request.urlopen(
+                API.format(tg["token"], "sendMessage"), datos, timeout=20) as r:
             return json.load(r).get("ok", False)
     except Exception:
         return False
+
+
+SEPARADOR = "\n\n---\n\n"
 
 
 def correo():
     """Lo que dejó escucha.py desde el último latido. Vaciar es acusar recibo."""
     if not BUZON.exists():
         return []
-    textos = [t for t in BUZON.read_text().split("\n\n---\n\n") if t.strip()]
+    textos = [t for t in BUZON.read_text().split(SEPARADOR) if t.strip()]
     BUZON.unlink(missing_ok=True)
     return textos
+
+
+def devolver(mensajes):
+    """Reencola lo que no se alcanzó a contestar.
+
+    Un latido que falla no puede tragarse la pregunta: sin esto, un motor mal
+    configurado destruye cada mensaje que llegue y nadie se entera.
+    """
+    if not mensajes:
+        return
+    pendiente = BUZON.read_text() if BUZON.exists() else ""
+    BUZON.write_text(SEPARADOR.join(mensajes) + SEPARADOR + pendiente)
 
 
 def ahora():
@@ -172,13 +201,18 @@ def anotar(cfg, linea):
 def main():
     os.chdir(REPO)
 
-    # El reloj y escucha.py pueden coincidir. Dos latidos a la vez se pisarían
-    # estado.md, así que el segundo se va sin hacer nada: el primero ya trae el
-    # buzón entero.
+    # El reloj y escucha.py pueden coincidir, y dos latidos a la vez se pisarían
+    # estado.md. El segundo espera su turno en vez de rendirse: si se rindiera,
+    # el mensaje que traía se quedaría en el buzón hasta la próxima cadencia —
+    # hasta un día entero de silencio, justo lo que la oreja existe para evitar.
     candado = CANDADO.open("w")
-    try:
-        fcntl.flock(candado, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
+    for _ in range(340):                      # ~11 min: algo más que el timeout
+        try:
+            fcntl.flock(candado, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            time.sleep(2)
+    else:
         return
 
     cfg = config()
@@ -187,6 +221,7 @@ def main():
 
     cmd = invocacion(cfg, armar_prompt(cfg, mensajes))
     if not cmd:
+        devolver(mensajes)
         return anotar(cfg, "ROTO: no encuentro el binario del CLI configurado")
 
     try:
@@ -212,6 +247,9 @@ def main():
     # El interruptor de hombre muerto: solo se toca si el latido FUNCIONÓ. Si
     # midiera ejecución en vez de éxito, uno que corre y falla cada vez se
     # vería sano. Quien vigila la frescura de este archivo se entera.
+    if not salio_bien:
+        devolver(mensajes)        # que lo reintente el próximo latido
+
     if salio_bien:
         ULTIMO.write_text(datetime.datetime.now().isoformat(timespec="seconds") + "\n")
         # estado.md entra entero en el contexto de cada latido. No hay sesión
