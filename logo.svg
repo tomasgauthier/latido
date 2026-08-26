@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Latido">
+  <rect width="64" height="64" fill="#05012F"/>
+  <g fill="none" stroke-width="2.6" stroke-linecap="square">
+    <path d="M8 32 L21 32 L26 17 L33 47 L39 25 L44 32 L56 32"
+          stroke="#2222ff" transform="translate(-1.2 1.2)"/>
+    <path d="M8 32 L21 32 L26 17 L33 47 L39 25 L44 32 L56 32"
+          stroke="#c0f600"/>
+  </g>
+</svg>

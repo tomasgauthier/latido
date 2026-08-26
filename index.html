@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Latido</title>
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Sistema visual de gauthier.cl: crema y tinta stone, lima como señal, navy
+     del glifo para lo que manda. Nada redondeado — la familia de glifos es de
+     rectas y ángulos, y la página también. */
+  :root {
+    --crema:  #fef9c3;  --papel: #ffffff;  --tinta: #1c1917;
+    --suave:  #57534e;  --tenue: #a8a29e;  --linea: #e7e5e4;
+    --lima:   #c0f600;  --lima-t:#7aa300;  --navy:  #05012f;
+    --eco:    #2222ff;  --alarma:#b45309;
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: light; }
+  body {
+    margin: 0; background: var(--crema); color: var(--tinta);
+    font: 15px/1.6 Inter, ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .marco {
+    display: grid; grid-template-columns: 14rem 1fr;
+    max-width: 64rem; margin: 0 auto; min-height: 100vh; gap: 2.5rem;
+    padding: 3rem 1.5rem 6rem;
+  }
+
+  /* ── barra lateral ────────────────────────────────────────────────────── */
+  aside { position: sticky; top: 3rem; align-self: start; }
+  .rotulo { display: flex; align-items: center; gap: .75rem; margin-bottom: 2rem; }
+  .glifo { width: 44px; height: 44px; flex: 0 0 auto; display: block; }
+  .glifo .trazo { stroke-dasharray: 132 132; }
+  .vivo .glifo .trazo { animation: recorrer 2.6s linear infinite; }
+  @keyframes recorrer { from { stroke-dashoffset: 264 } to { stroke-dashoffset: 0 } }
+  h1 { font-size: 1.3rem; font-weight: 600; letter-spacing: -.03em; margin: 0; }
+
+  nav { display: flex; flex-direction: column; }
+  nav button {
+    all: unset; cursor: pointer; padding: .5rem .85rem; font-size: .9rem;
+    color: var(--suave); border-left: 2px solid var(--linea);
+    transition: color .12s, border-color .12s, background .12s;
+  }
+  nav button:hover { color: var(--tinta); background: #fffdf0; }
+  nav button[aria-current="true"] {
+    color: var(--tinta); font-weight: 500;
+    border-left-color: var(--lima-t); background: var(--papel);
+  }
+
+  .pulso {
+    margin-top: 2rem; padding: .9rem; background: var(--papel);
+    border: 1px solid var(--linea); font-size: .82rem; color: var(--suave);
+  }
+  .pulso .linea { display: flex; align-items: center; gap: .5rem; }
+  .marca { width: 8px; height: 8px; background: var(--tenue); flex: 0 0 auto; }
+  .vivo .marca { background: var(--lima-t); animation: latir 2.6s ease-in-out infinite; }
+  @keyframes latir { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+  .pulso .desde { color: var(--tenue); font-size: .76rem; margin-top: .3rem; }
+  .pulso button { margin-top: .75rem; width: 100%; }
+
+  /* ── contenido ────────────────────────────────────────────────────────── */
+  main { min-width: 0; }
+  .panel { display: none; }
+  .panel[data-abierto] { display: block; }
+  .panel > h2 {
+    font-size: 1.05rem; font-weight: 600; margin: 0 0 .3rem; letter-spacing: -.01em;
+  }
+  .panel > .intro { color: var(--suave); font-size: .88rem; margin: 0 0 1.5rem; max-width: 42rem; }
+  .caja { background: var(--papel); border: 1px solid var(--linea); padding: 1.5rem; }
+
+  .fila { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
+  .crece { flex: 1 1 auto; }
+  .par { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+  label { display: block; font-size: .78rem; color: var(--suave); margin-bottom: .4rem; }
+
+  input, select, textarea {
+    width: 100%; font: inherit; color: var(--tinta); background: var(--papel);
+    border: 1px solid var(--linea); border-radius: 0; padding: .55rem .7rem;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--navy); outline-offset: -1px; border-color: var(--navy);
+  }
+  input[readonly] { background: #fafaf9; color: var(--suave); }
+  textarea { font: 13px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size: .82rem; }
+
+  button.act {
+    font: inherit; font-size: .85rem; font-weight: 500; padding: .5rem 1rem;
+    border: 1px solid var(--tinta); border-radius: 0;
+    background: transparent; color: var(--tinta); cursor: pointer;
+    transition: background .12s, color .12s, opacity .12s;
+  }
+  button.act:hover:not(:disabled) { background: var(--tinta); color: var(--crema); }
+  button.act:disabled { opacity: .35; cursor: default; }
+  button.fuerte { background: var(--navy); border-color: var(--navy); color: #fff; }
+  button.fuerte:hover:not(:disabled) { background: var(--eco); border-color: var(--eco); }
+  button.tenue {
+    border: none; background: none; color: var(--suave); padding: .35rem 0;
+    font: inherit; font-size: .8rem; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+  button.tenue:hover { color: var(--tinta); }
+
+  .fuente { display: flex; gap: .5rem; margin-bottom: .5rem; align-items: center; }
+  .fuente .ruta { flex: 0 0 34%; font-family: ui-monospace, Menlo, monospace; font-size: .78rem; }
+  .fuente .quitar {
+    flex: 0 0 auto; border: none; background: none; color: var(--tenue);
+    padding: .3rem .45rem; font-size: 1rem; line-height: 1; cursor: pointer;
+  }
+  .fuente .quitar:hover { color: var(--alarma); }
+
+  /* ── bitácora ─────────────────────────────────────────────────────────── */
+  .dia {
+    font: 500 .7rem/1 ui-monospace, Menlo, monospace; color: var(--tenue);
+    letter-spacing: .06em; margin: 1.5rem 0 .6rem; padding-bottom: .4rem;
+    border-bottom: 1px solid var(--linea);
+  }
+  .dia:first-child { margin-top: 0; }
+  .latido { display: flex; gap: .85rem; padding: .55rem 0; align-items: baseline; }
+  .latido + .latido { border-top: 1px solid #f7f6f3; }
+  .hora { font: .78rem/1.6 ui-monospace, Menlo, monospace; color: var(--tenue); flex: 0 0 3.1rem; }
+  .que { flex: 1 1 auto; border-left: 3px solid var(--linea); padding-left: .85rem; font-size: .875rem; }
+  .hablo .que { border-left-color: var(--lima-t); }
+  .callo .que { color: var(--suave); }
+  .roto  .que { border-left-color: var(--alarma); color: var(--alarma); }
+  .vacio { color: var(--tenue); font-size: .875rem; }
+
+  /* Un botón permanentemente apagado se ve roto: la barra no existe hasta que
+     hay algo que guardar o algo que contar. */
+  .barra {
+    position: fixed; left: 0; right: 0; bottom: 0; padding: .8rem 1.5rem;
+    background: var(--papel); border-top: 1px solid var(--linea);
+    transform: translateY(110%); transition: transform .18s ease;
+    box-shadow: 0 -1px 12px rgba(28,25,23,.05);
+  }
+  .barra.activa { transform: none; }
+  .barra-int {
+    max-width: 64rem; margin: 0 auto;
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  }
+  .aviso { color: var(--suave); font-size: .84rem; }
+  .ayuda { color: var(--tenue); font-size: .79rem; margin: .9rem 0 0; line-height: 1.55; }
+  .ayuda em { color: var(--suave); font-style: normal; font-weight: 500; }
+
+  @media (max-width: 52rem) {
+    .marco { grid-template-columns: 1fr; gap: 1.5rem; padding: 2rem 1rem 6rem; }
+    aside { position: static; }
+    nav { flex-direction: row; overflow-x: auto; border-bottom: 1px solid var(--linea); }
+    nav button { border-left: none; border-bottom: 2px solid transparent; white-space: nowrap; }
+    nav button[aria-current="true"] { border-bottom-color: var(--lima-t); background: none; }
+    .pulso { margin-top: 1rem; }
+    .par { grid-template-columns: 1fr }
+    .fuente { flex-wrap: wrap }
+    .fuente .ruta { flex: 1 1 100% }
+  }
+</style>
+</head>
+<body>
+<div class="marco" id="raiz">
+
+  <aside>
+    <div class="rotulo">
+      <!-- Mismo sistema que los glifos de gauthier.cl: caja 64 sobre navy,
+           polilínea lima con el eco azul desfasado (-1.2, +1.2), solo rectas. -->
+      <svg class="glifo" viewBox="0 0 64 64" role="img" aria-label="Latido">
+        <rect width="64" height="64" fill="#05012F"/>
+        <g fill="none" stroke-width="2.6" stroke-linecap="square">
+          <path d="M8 32 L21 32 L26 17 L33 47 L39 25 L44 32 L56 32"
+                stroke="#2222ff" transform="translate(-1.2 1.2)"/>
+          <path class="trazo" d="M8 32 L21 32 L26 17 L33 47 L39 25 L44 32 L56 32"
+                stroke="#c0f600"/>
+        </g>
+      </svg>
+      <h1>Latido</h1>
+    </div>
+
+    <nav id="nav">
+      <button data-va="estado">Estado</button>
+      <button data-va="ritmo">Ritmo</button>
+      <button data-va="telegram">Telegram</button>
+      <button data-va="fuentes">Fuentes</button>
+      <button data-va="registro">Registro</button>
+      <button data-va="instrucciones">Instrucciones</button>
+      <button data-va="bitacora">Bitácora</button>
+    </nav>
+
+    <div class="pulso">
+      <div class="linea"><span class="marca"></span><span id="texto-estado">—</span></div>
+      <div class="desde" id="desde"></div>
+      <button class="act" id="btn-latir">Latir ahora</button>
+    </div>
+  </aside>
+
+  <main>
+    <section class="panel" data-panel="estado" data-abierto>
+      <h2>Estado</h2>
+      <p class="intro" id="resumen">cargando…</p>
+      <div class="caja">
+        <div class="fila">
+          <span class="marca"></span>
+          <span class="crece" id="texto-estado-2">—</span>
+          <button class="act" id="btn-encender">Prender</button>
+        </div>
+        <p class="ayuda">El reloj y la oreja se prenden y se apagan juntos: son una sola cosa. La oreja te responde al toque; el reloj mira por su cuenta.</p>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="ritmo">
+      <h2>Ritmo</h2>
+      <p class="intro">Cada cuánto mira por su cuenta. Esto no afecta cuánto tarda en responderte a ti — eso es inmediato.</p>
+      <div class="caja">
+        <div class="par">
+          <div>
+            <label for="cadencia">Cadencia</label>
+            <select id="cadencia">
+              <option value="900">15 minutos — prueba</option>
+              <option value="1800">30 minutos — prueba</option>
+              <option value="14400">4 horas</option>
+              <option value="43200">12 horas</option>
+              <option value="86400">Una vez al día</option>
+            </select>
+          </div>
+          <div>
+            <label for="modelo">Modelo</label>
+            <select id="modelo">
+              <option value="sonnet">Sonnet — recomendado</option>
+              <option value="haiku">Haiku — más barato</option>
+              <option value="opus">Opus — caro</option>
+            </select>
+          </div>
+        </div>
+        <p class="ayuda">Su trabajo es decidir <em>no</em> hablar, y ahí los modelos chicos se van a un extremo: o hablan siempre o no hablan nunca.</p>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="telegram">
+      <h2>Telegram</h2>
+      <p class="intro">Por dónde te habla y por dónde le hablas. Pídele un bot a @BotFather con <code>/newbot</code>.</p>
+      <div class="caja">
+        <div class="par">
+          <div>
+            <label for="token">Token del bot <span id="estado-token"></span></label>
+            <input id="token" type="password" placeholder="pídeselo a @BotFather" autocomplete="off">
+          </div>
+          <div>
+            <label for="chat">Chat de destino</label>
+            <div class="fila">
+              <input id="chat" class="crece mono" placeholder="sin detectar" readonly>
+              <button class="act" id="btn-detectar">Detectar</button>
+            </div>
+          </div>
+        </div>
+        <p class="ayuda">Guarda el token, escríbele cualquier cosa al bot desde tu Telegram, y aprieta <em>Detectar</em>. Solo pasan los mensajes de ese chat: cualquiera que sepa el nombre del bot puede escribirle, y ese texto entraría al prompt de un agente que lee tus archivos.</p>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="fuentes">
+      <h2>Fuentes</h2>
+      <p class="intro">Las carpetas que mira, y qué es cada una en una frase — esa descripción es la que usa para saber qué buscar ahí.</p>
+      <div class="caja">
+        <div id="fuentes"></div>
+        <button class="tenue" id="btn-fuente">agregar carpeta</button>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="registro">
+      <h2>Registro</h2>
+      <p class="intro">Dónde deja lo que escribe sobre tu vida: la bitácora de cada latido y su memoria entre uno y otro.</p>
+      <div class="caja">
+        <label for="registro">Carpeta del registro</label>
+        <input id="registro" class="mono" placeholder="vacío = dentro de este repositorio">
+        <p class="ayuda">Apúntalo a tu bóveda de Obsidian y lo lees ahí como cualquier otra nota. Deja <em>bitacora/</em> con un archivo por día y <em>estado.md</em> con su memoria. Fuera del repositorio, además, no hay riesgo de publicar tu diario junto con el código.</p>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="instrucciones">
+      <h2>Instrucciones</h2>
+      <p class="intro">Aquí vive toda su conducta: cuándo callarse, cómo escribir, qué ignorar.</p>
+      <div class="caja">
+        <textarea id="prompt" rows="24" spellcheck="false"></textarea>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="bitacora">
+      <h2>Bitácora</h2>
+      <p class="intro">Lo que hace calibrable la cosa: lees por qué se calló y ajustas las instrucciones hasta que hable cuando debe.</p>
+      <div class="caja">
+        <div id="bitacora"><p class="vacio">—</p></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="barra" id="barra">
+  <div class="barra-int">
+    <span class="aviso" id="aviso"></span>
+    <button class="act fuerte" id="btn-guardar" hidden>Guardar</button>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+let estado = {}, limpio = '';
+
+// ── navegación ────────────────────────────────────────────────────────────
+function ir(nombre) {
+  $$('.panel').forEach(p => p.toggleAttribute('data-abierto', p.dataset.panel === nombre));
+  $$('#nav button').forEach(b => b.setAttribute('aria-current', b.dataset.va === nombre));
+  location.hash = nombre;
+}
+$$('#nav button').forEach(b => b.onclick = () => ir(b.dataset.va));
+
+// ── plomería ──────────────────────────────────────────────────────────────
+const api = async (ruta, cuerpo) => {
+  const r = await fetch(ruta, cuerpo
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) }
+    : undefined);
+  return r.json();
+};
+const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+const decir = (t, ms = 3000) => {
+  $('#aviso').textContent = t; revisar();
+  if (ms) setTimeout(() => {
+    if ($('#aviso').textContent === t) { $('#aviso').textContent = ''; revisar(); }
+  }, ms);
+};
+
+const recoger = () => ({
+  cadencia: $('#cadencia').value,
+  modelo: $('#modelo').value,
+  token: $('#token').value,
+  registro: $('#registro').value,
+  prompt: $('#prompt').value,
+  fuentes: $$('.fuente').map(d => ({
+    ruta: d.querySelector('.ruta').value.trim(),
+    que_es: d.querySelector('.quees').value.trim() }))
+});
+
+const SIN_GUARDAR = 'cambios sin guardar';
+const revisar = () => {
+  const sucio = limpio && JSON.stringify(recoger()) !== limpio;
+  const aviso = $('#aviso');
+  if (sucio && !aviso.textContent) aviso.textContent = SIN_GUARDAR;
+  if (!sucio && aviso.textContent === SIN_GUARDAR) aviso.textContent = '';
+  $('#btn-guardar').hidden = !sucio;
+  $('#barra').classList.toggle('activa', sucio || !!aviso.textContent);
+};
+
+function fila(f = { ruta: '', que_es: '' }) {
+  const d = document.createElement('div');
+  d.className = 'fuente';
+  d.innerHTML = `<input class="ruta" placeholder="~/carpeta">`
+              + `<input class="quees crece" placeholder="qué es, en una frase">`
+              + `<button class="quitar" title="quitar">×</button>`;
+  const [ruta, quees, quitar] = d.children;
+  ruta.value = f.ruta; ruta.title = f.ruta;
+  quees.value = f.que_es;
+  ruta.oninput = () => { ruta.title = ruta.value; revisar(); };
+  quees.oninput = revisar;
+  quitar.onclick = () => { d.remove(); revisar(); };
+  $('#fuentes').append(d);
+}
+
+const CADA = { 900: 'cada 15 minutos', 1800: 'cada media hora', 14400: 'cada 4 horas',
+               43200: 'dos veces al día', 86400: 'una vez al día' };
+
+function hace(iso) {
+  if (!iso) return 'aún no late bien ni una vez';
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (m < 1) return 'último latido: recién';
+  if (m < 60) return `último latido: hace ${m} min`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `último latido: hace ${h} h` : `último latido: hace ${Math.round(h / 24)} días`;
+}
+
+function pintarBitacora(latidos) {
+  if (!latidos.length) return $('#bitacora').innerHTML = '<p class="vacio">Todavía no late.</p>';
+  let html = '', dia = '';
+  for (const l of latidos) {
+    if (l.dia !== dia) { html += `<div class="dia">${l.dia}</div>`; dia = l.dia; }
+    html += `<div class="latido ${l.tipo}"><span class="hora">${l.hora}</span>`
+          + `<span class="que">${esc(l.texto)}</span></div>`;
+  }
+  $('#bitacora').innerHTML = html;
+}
+
+function pintar(e) {
+  estado = e;
+  $('#cadencia').value = e.cadencia;
+  $('#modelo').value = e.modelo;
+  $('#chat').value = e.chat_id;
+  $('#registro').value = e.registro || '';
+  $('#prompt').value = e.prompt;
+  $('#estado-token').textContent = e.hay_token ? '· guardado' : '· falta';
+  $('#token').placeholder = e.hay_token ? '•••••••• (guardado)' : 'pídeselo a @BotFather';
+  $('#fuentes').innerHTML = '';
+  (e.fuentes.length ? e.fuentes : [{ ruta: '', que_es: '' }]).forEach(fila);
+  pintarBitacora(e.latidos || []);
+
+  $('#raiz').classList.toggle('vivo', e.corriendo);
+  const dice = e.corriendo
+    ? (e.escuchando ? 'Latiendo y escuchando' : 'Latiendo, oreja caída')
+    : 'Apagado';
+  $('#texto-estado').textContent = dice;
+  $('#texto-estado-2').textContent = dice + '.';
+  $('#desde').textContent = e.corriendo ? hace(e.ultimo) : '';
+  $('#btn-encender').textContent = e.corriendo ? 'Apagar' : 'Prender';
+  $('#resumen').textContent = e.corriendo
+    ? `Te responde al toque, y ${CADA[e.cadencia] || 'cada ' + e.cadencia + 's'} mira por su cuenta.`
+    : 'Apagado — no está escuchando ni mirando nada.';
+
+  limpio = JSON.stringify(recoger());
+  revisar();
+}
+
+const cargar = async () => pintar(await api('/api/estado'));
+
+$('#btn-guardar').onclick = async () => {
+  decir('guardando…', 0);
+  await api('/api/guardar', recoger());
+  $('#token').value = '';
+  await cargar();
+  decir('guardado');
+};
+
+$('#btn-encender').onclick = async () => {
+  const encendido = estado.corriendo;
+  decir(encendido ? 'apagando…' : 'prendiendo…', 0);
+  await api('/api/accion', { accion: encendido ? 'apagar' : 'prender' });
+  await cargar();
+  decir(encendido ? 'apagado' : 'prendido');
+};
+
+// Espera de verdad: sondea hasta que aparece un latido nuevo, en vez de
+// adivinar cuánto tarda.
+$('#btn-latir').onclick = async () => {
+  const antes = estado.latidos?.[0];
+  const marca = antes ? antes.dia + antes.hora + antes.texto : '';
+  $('#btn-latir').disabled = true;
+  decir('latiendo…', 0);
+  await api('/api/accion', { accion: 'disparar' });
+  for (let i = 0; i < 60; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    const e = await api('/api/estado');
+    const hoy = e.latidos?.[0];
+    if (hoy && hoy.dia + hoy.hora + hoy.texto !== marca) {
+      pintar(e); ir('bitacora');
+      $('#btn-latir').disabled = false;
+      return decir(hoy.tipo === 'callo' ? 'latió y se calló' : 'latió', 5000);
+    }
+  }
+  $('#btn-latir').disabled = false;
+  decir('se demoró más de tres minutos; revisa la bitácora', 6000);
+};
+
+$('#btn-detectar').onclick = async () => {
+  decir('buscando…', 0);
+  const r = await api('/api/detectar', {});
+  await cargar();
+  decir(r.ok ? 'chat detectado' : r.error, 6000);
+};
+
+$('#btn-fuente').onclick = () => { fila(); revisar(); };
+for (const id of ['#cadencia', '#modelo', '#token', '#registro', '#prompt'])
+  $(id).addEventListener('input', revisar);
+
+addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+    e.preventDefault();
+    if (!$('#btn-guardar').hidden) $('#btn-guardar').click();
+  }
+});
+
+ir(location.hash.slice(1) || 'estado');
+cargar();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+.offset
+salida.txt
+config.json
+buzon.txt
+.ultimo
+.candado
+__pycache__/
+.DS_Store
+bitacora/
+estado.md

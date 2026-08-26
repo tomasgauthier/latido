@@ -1,0 +1,26 @@
+{
+  "cadencia": 86400,
+  "modelo": "sonnet",
+  "telegram": {
+    "token": "",
+    "chat_id": ""
+  },
+  "fuentes": [
+    {
+      "ruta": "~/Documentos/bandeja",
+      "que_es": "la bandeja de entrada: lo que llegó y lleva días sin moverse"
+    },
+    {
+      "ruta": "~/Documentos/diario",
+      "que_es": "el diario: lo que quedó anotado como pendiente y sigue sin tocarse"
+    }
+  ],
+  "herramientas": [
+    "Read",
+    "Glob",
+    "Grep",
+    "Write",
+    "Edit"
+  ],
+  "registro": ""
+}
