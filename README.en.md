@@ -110,6 +110,28 @@ Obsidian vault, say, where you read them like any other note. Both are kept out
 of git on purpose: they're your diary, not the tool, and they have no business
 travelling with the code if you ever publish this.
 
+## Why not just a remote control?
+
+Session remote controls exist — Claude Code's Remote Control, for one — letting
+you reach a running session from your phone. They beat this at almost
+everything: full power, real conversation, any repository. If you have a session
+open and want to ask it something, use that.
+
+| | A remote control | A heartbeat |
+|---|---|---|
+| Who starts | You, always | It does too |
+| Needs a live session | Yes | No: it creates one |
+| Reach | Full, conversational | One short shot, few tools |
+| When nothing is open | Nothing to connect to | Still works |
+
+The whole difference fits in the first row. **A remote control has no
+initiative**: it brings you closer to your session, but it will never write to
+you. This exists for the other half — for something to tell you, on a Sunday
+morning with the laptop shut and nothing running, that a proposal has been
+sitting untouched for nine days.
+
+It's a narrow moat. But it's the one a remote control cannot cross.
+
 ## Talking to it
 
 Message the bot whenever you like: the ear is awake and fires a beat the moment

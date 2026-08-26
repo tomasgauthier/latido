@@ -186,6 +186,7 @@
       <button data-va="telegram">Telegram</button>
       <button data-va="fuentes">Fuentes</button>
       <button data-va="registro">Registro</button>
+      <button data-va="motor">Motor</button>
       <button data-va="instrucciones">Instrucciones</button>
       <button data-va="bitacora">Bitácora</button>
     </nav>
@@ -279,6 +280,17 @@
       </div>
     </section>
 
+    <section class="panel" data-panel="motor">
+      <h2>Motor</h2>
+      <p class="intro">Qué CLI despierta en cada latido. Sirve cualquiera que reciba un prompt como argumento y devuelva texto por stdout.</p>
+      <div class="caja">
+        <label for="cli">Invocación</label>
+        <textarea id="cli" rows="12" spellcheck="false"></textarea>
+        <p class="ayuda"><em>{prompt}</em> se reemplaza por las instrucciones completas, <em>{modelo}</em> por lo que elijas en Ritmo, y <em>{herramientas}</em> se expande en un argumento por herramienta. <em>flag_carpeta</em> se repite por cada fuente — déjalo vacío si tu CLI no tiene ese concepto.</p>
+        <p class="ayuda">Lo único innegociable es que el modelo pueda <em>escribir un archivo</em>: <em>salida.txt</em> es su única voz.</p>
+      </div>
+    </section>
+
     <section class="panel" data-panel="instrucciones">
       <h2>Instrucciones</h2>
       <p class="intro">Aquí vive toda su conducta: cuándo callarse, cómo escribir, qué ignorar.</p>
@@ -338,6 +350,7 @@ const recoger = () => ({
   modelo: $('#modelo').value,
   token: $('#token').value,
   registro: $('#registro').value,
+  cli: $('#cli').value,
   prompt: $('#prompt').value,
   fuentes: $$('.fuente').map(d => ({
     ruta: d.querySelector('.ruta').value.trim(),
@@ -398,6 +411,7 @@ function pintar(e) {
   $('#modelo').value = e.modelo;
   $('#chat').value = e.chat_id;
   $('#registro').value = e.registro || '';
+  $('#cli').value = e.cli || '';
   $('#prompt').value = e.prompt;
   $('#estado-token').textContent = e.hay_token ? '· guardado' : '· falta';
   $('#token').placeholder = e.hay_token ? '•••••••• (guardado)' : 'pídeselo a @BotFather';
@@ -425,7 +439,8 @@ const cargar = async () => pintar(await api('/api/estado'));
 
 $('#btn-guardar').onclick = async () => {
   decir('guardando…', 0);
-  await api('/api/guardar', recoger());
+  const r = await api('/api/guardar', recoger());
+  if (!r.ok) return decir(r.error, 8000);   // no recargamos: se perdería lo escrito
   $('#token').value = '';
   await cargar();
   decir('guardado');
@@ -469,7 +484,7 @@ $('#btn-detectar').onclick = async () => {
 };
 
 $('#btn-fuente').onclick = () => { fila(); revisar(); };
-for (const id of ['#cadencia', '#modelo', '#token', '#registro', '#prompt'])
+for (const id of ['#cadencia', '#modelo', '#token', '#registro', '#cli', '#prompt'])
   $(id).addEventListener('input', revisar);
 
 addEventListener('keydown', e => {

@@ -128,6 +128,7 @@ def estado():
         "hay_token": bool(tg.get("token")),      # nunca el token mismo
         "chat_id": tg.get("chat_id") or "",
         "registro": cfg.get("registro") or "",
+        "cli": json.dumps(cfg.get("cli") or CLI_POR_OMISION, indent=2, ensure_ascii=False),
         "corriendo": corriendo(),
         "escuchando": vivo(OREJA),
         "ultimo": ULTIMO.read_text().strip() if ULTIMO.exists() else "",
@@ -135,8 +136,27 @@ def estado():
     }
 
 
+CLI_POR_OMISION = {
+    "bin": "claude",
+    "args": ["-p", "{prompt}", "--model", "{modelo}",
+             "--permission-mode", "acceptEdits",
+             "--allowedTools", "{herramientas}"],
+    "flag_carpeta": "--add-dir",
+}
+
+
 def guardar(d):
     cfg = leer()
+    if d.get("cli") is not None:
+        # Un JSON malo acá deja al latido mudo y sin avisar, así que no se
+        # guarda nada hasta que esté bien formado.
+        try:
+            cli = json.loads(d["cli"])
+            assert isinstance(cli, dict) and cli.get("bin"), "falta \"bin\""
+            assert isinstance(cli.get("args"), list), "\"args\" tiene que ser una lista"
+        except Exception as e:
+            return {"ok": False, "error": f"el motor no se guardó: {e}"}
+        cfg["cli"] = cli
     cfg["cadencia"] = int(d.get("cadencia") or 86400)
     cfg["modelo"] = d.get("modelo") or "sonnet"
     cfg["fuentes"] = [f for f in (d.get("fuentes") or []) if f.get("ruta")]

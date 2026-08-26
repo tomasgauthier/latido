@@ -84,7 +84,11 @@ Bien:
 
 Reescribe `estado.md` con lo que corresponda: qué avisaste y cuándo, para no
 repetirlo mañana. Si no dijiste nada, deja constancia de qué revisaste igual.
-Mantenlo corto — es memoria de trabajo, no un diario.
+
+**Reescribir, no agregar. Nunca más de 25 líneas.** Es memoria de trabajo, no un
+diario: si algo ya se resolvió o dejó de importar, bórralo. Cuando no quepa
+todo, quédate con lo que sigue vivo — el archivo completo entra en tu contexto
+en cada latido, y uno que crece sin techo te va ahogando de a poco.
 
 ## Tu respuesta a stdout
 

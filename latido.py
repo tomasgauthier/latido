@@ -214,6 +214,13 @@ def main():
     # vería sano. Quien vigila la frescura de este archivo se entera.
     if salio_bien:
         ULTIMO.write_text(datetime.datetime.now().isoformat(timespec="seconds") + "\n")
+        # estado.md entra entero en el contexto de cada latido. No hay sesión
+        # que compactar —cada latido es nueva— pero este archivo sí crece si el
+        # modelo escribe de más, y ahí sí duele. Se avisa, no se trunca: cortarlo
+        # a ciegas le borraría la memoria sin que nadie se entere.
+        est = registro(cfg) / "estado.md"
+        if est.exists() and est.stat().st_size > 6000:
+            linea += f"  [estado.md va en {est.stat().st_size // 1000} KB: pídele que lo pode]"
     else:
         linea = f"ROTO: {linea}" if not linea.startswith("ROTO") else linea
 

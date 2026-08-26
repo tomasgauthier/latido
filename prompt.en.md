@@ -82,7 +82,11 @@ Good:
 
 Rewrite `estado.md` with whatever belongs there: what you reported and when, so
 you don't repeat it tomorrow. If you said nothing, still note what you checked.
-Keep it short — it's working memory, not a diary.
+
+**Rewrite, don't append. Never more than 25 lines.** It's working memory, not a
+diary: if something is resolved or no longer matters, delete it. When it doesn't
+all fit, keep what is still live — the whole file enters your context on every
+beat, and one that grows without a ceiling slowly drowns you.
 
 ## Your answer on stdout
 

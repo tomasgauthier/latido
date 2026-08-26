@@ -103,6 +103,29 @@ Obsidian, por ejemplo, donde las lees como cualquier otra nota. Los dos archivos
 están fuera de git a propósito — son tu diario, no la herramienta, y no tienen
 por qué viajar si algún día publicas esto.
 
+## ¿Y por qué no un control remoto?
+
+Existen controles remotos de sesiones —el Remote Control de Claude Code, por
+ejemplo— que te conectan desde el teléfono a una sesión que ya está corriendo.
+Son mejores que esto en casi todo: potencia completa, conversación de verdad,
+cualquier repositorio. Si tienes una sesión abierta y quieres preguntarle algo,
+usa eso.
+
+| | Un control remoto | Un latido |
+|---|---|---|
+| Quién empieza | Tú, siempre | Él también |
+| Necesita una sesión viva | Sí | No: la crea |
+| Alcance | Total, conversacional | Un tiro corto, herramientas contadas |
+| Cuando no hay nada abierto | No hay a qué conectarse | Sigue funcionando |
+
+La diferencia entera cabe en la primera fila. **Un control remoto no tiene
+iniciativa**: te acerca a tu sesión, pero nunca te va a escribir él. Este
+existe para la otra mitad — que algo te avise un domingo a las ocho de la
+mañana, con el computador cerrado y sin que hubiera nada corriendo, porque una
+propuesta lleva nueve días parada.
+
+Es un foso angosto. Pero es el único que un control remoto no puede cruzar.
+
 ## Hablarle tú
 
 Escríbele al bot cuando quieras: la oreja está despierta y dispara un latido en
