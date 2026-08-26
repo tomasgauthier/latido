@@ -48,22 +48,57 @@ def registro(cfg):
     return d
 
 
-def buscar_claude():
+CLI_POR_OMISION = {
+    "bin": "claude",
+    "args": ["-p", "{prompt}", "--model", "{modelo}",
+             "--permission-mode", "acceptEdits",
+             "--allowedTools", "{herramientas}"],
+    "flag_carpeta": "--add-dir",
+}
+
+
+def buscar(nombre):
     """El binario no está en el mismo sitio en todos los computadores, y bajo
-    launchd el PATH es mínimo. Se puede fijar con `claude` en config.json."""
-    fijado = config().get("claude")
-    if fijado:
-        fijado = os.path.expanduser(fijado)
-        return fijado if os.access(fijado, os.X_OK) else None
-    hallado = shutil.which("claude")
+    launchd el PATH es mínimo."""
+    if "/" in nombre:
+        n = os.path.expanduser(nombre)
+        return n if os.access(n, os.X_OK) else None
+    hallado = shutil.which(nombre)
     if hallado:
         return hallado
-    for c in ("~/.local/bin/claude", "~/.claude/local/claude",
-              "/opt/homebrew/bin/claude", "/usr/local/bin/claude"):
-        c = os.path.expanduser(c)
+    for d in ("~/.local/bin", f"~/.{nombre}/local", "/opt/homebrew/bin", "/usr/local/bin"):
+        c = os.path.expanduser(f"{d}/{nombre}")
         if os.access(c, os.X_OK):
             return c
     return None
+
+
+def invocacion(cfg, prompt):
+    """La línea de comandos, armada desde config.json.
+
+    El latido no le pide nada raro a nadie: ejecuta el CLI oficial de tu
+    proveedor en su modo no interactivo, con tu propia sesión. Por eso la
+    invocación es configurable — sirve cualquier CLI que acepte un prompt como
+    argumento y devuelva texto por stdout.
+    """
+    cli = {**CLI_POR_OMISION, **(cfg.get("cli") or {})}
+    binario = buscar(cli["bin"])
+    if not binario:
+        return None
+    reemplazo = {"{prompt}": prompt, "{modelo}": cfg.get("modelo", "sonnet")}
+    herramientas = cfg.get("herramientas") or ["Read", "Glob", "Grep", "Write", "Edit"]
+
+    cmd = [binario]
+    for a in cli["args"]:
+        if a == "{herramientas}":
+            cmd += herramientas          # se expande en varios argumentos
+        else:
+            cmd.append(reemplazo.get(a, a) if a in reemplazo else a)
+    if cli.get("flag_carpeta"):
+        for f in cfg.get("fuentes") or []:
+            cmd += [cli["flag_carpeta"], os.path.expanduser(f["ruta"])]
+        cmd += [cli["flag_carpeta"], str(registro(cfg))]
+    return cmd
 
 
 def enviar(cfg, texto):
@@ -152,19 +187,9 @@ def main():
     SALIDA.unlink(missing_ok=True)
     mensajes = correo()
 
-    claude = buscar_claude()
-    if not claude:
-        return anotar(cfg, "ROTO: no encuentro el binario de Claude Code")
-
-    # Write no es opcional: es el único canal por el que el latido habla.
-    herramientas = cfg.get("herramientas") or ["Read", "Glob", "Grep", "Write", "Edit"]
-    cmd = [claude, "-p", armar_prompt(cfg, mensajes),
-           "--model", cfg.get("modelo", "sonnet"),
-           "--permission-mode", "acceptEdits",
-           "--allowedTools", *herramientas]
-    for f in cfg.get("fuentes") or []:
-        cmd += ["--add-dir", os.path.expanduser(f["ruta"])]
-    cmd += ["--add-dir", str(registro(cfg))]      # ahí escribe su memoria
+    cmd = invocacion(cfg, armar_prompt(cfg, mensajes))
+    if not cmd:
+        return anotar(cfg, "ROTO: no encuentro el binario del CLI configurado")
 
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
