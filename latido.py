@@ -162,12 +162,10 @@ def anotar(cfg, linea):
     bit = registro(cfg) / "bitacora" / f"{dia}.md"
     with bit.open("a") as f:
         f.write(f"\n## {datetime.datetime.now():%H:%M}\n\n{linea}\n")
-    subprocess.run(["git", "add", "-A"], cwd=REPO, capture_output=True)
-    if subprocess.run(["git", "diff", "--cached", "--quiet"],
-                      cwd=REPO, capture_output=True).returncode:
-        subprocess.run(["git", "commit", "-q", "-m",
-                        f"latido {datetime.datetime.now():%Y-%m-%d %H:%M}"],
-                       cwd=REPO, capture_output=True)
+    # Sin git acá a propósito: un `git add -A` automático barría también lo que
+    # el dueño tuviera a medio escribir en el repo. Si quieres el registro
+    # versionado, ponlo en una carpeta que ya sea repositorio (una bóveda con
+    # su propio respaldo, por ejemplo).
     print(linea)
 
 
