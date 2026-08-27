@@ -7,6 +7,7 @@ archivos y carga agentes de launchd, no tiene nada que hacer en la red.
     ./servidor.py        →  http://127.0.0.1:8737
 """
 
+import datetime
 import json
 import os
 import pathlib
@@ -23,6 +24,7 @@ REPO = pathlib.Path(__file__).resolve().parent
 CONFIG = REPO / "config.json"
 PROMPT = REPO / "prompt.md"
 ULTIMO = REPO / ".ultimo"
+CONSUMO = REPO / "consumo.jsonl"
 LATIDO = "local.latido"           # el reloj: despierta cada N segundos
 OREJA = "local.latido.escucha"    # la oreja: permanente, dispara al recibir
 WEB = "local.latido.web"          # esta misma página
@@ -124,6 +126,40 @@ def latidos(n=25):
     return salida[:n]
 
 
+def consumo(dias=7):
+    """Lo que llevan gastando los latidos, sumado por día.
+
+    Lo escribe latido.py, un renglón por latido. Se lee entero cada vez: son
+    unos pocos miles de líneas al año y no vale la pena un índice.
+    """
+    if not CONSUMO.exists():
+        return None
+    hoy = datetime.date.today()
+    desde = (hoy - datetime.timedelta(days=dias - 1)).isoformat()
+    r = {k: {"latidos": 0, "tokens": 0, "usd": 0.0}
+         for k in ("hoy", "semana", "total")}
+    r["desde"] = ""
+    with CONSUMO.open() as f:
+        for renglon in f:
+            try:
+                g = json.loads(renglon)
+            except Exception:
+                continue
+            dia = (g.get("cuando") or "")[:10]
+            cubos = ["total"]
+            if dia >= desde:
+                cubos.append("semana")
+            if dia == hoy.isoformat():
+                cubos.append("hoy")
+            for k in cubos:
+                r[k]["latidos"] += 1
+                r[k]["tokens"] += sum(g.get(x) or 0 for x in (
+                    "entrada", "salida", "cache", "cache_lee", "cache_crea"))
+                r[k]["usd"] += g.get("usd") or 0
+            r["desde"] = min(r["desde"] or dia, dia)
+    return r if r["total"]["latidos"] else None
+
+
 # ── la API ───────────────────────────────────────────────────────────────────
 
 def estado():
@@ -148,6 +184,7 @@ def estado():
         "corriendo": corriendo(),
         "escuchando": vivo(OREJA),
         "ultimo": ULTIMO.read_text().strip() if ULTIMO.exists() else "",
+        "consumo": consumo(),
         "latidos": latidos(),
     }
 
@@ -158,7 +195,8 @@ MOTORES = [
     {"id": "claude", "nombre": "Claude Code", "de": "Anthropic", "bin": "claude",
      "args": ["-p", "{prompt}", "--model", "{modelo}",
               "--permission-mode", "acceptEdits",
-              "--allowedTools", "{herramientas}"],
+              "--allowedTools", "{herramientas}",
+              "--output-format", "json"],
      "flag_carpeta": "--add-dir",
      "modelos": [["sonnet", "Sonnet — recomendado"],
                  ["haiku", "Haiku — más barato"],

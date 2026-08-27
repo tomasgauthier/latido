@@ -40,7 +40,25 @@ algo que no puedes, dilo derecho en una frase, sin disculpas largas.
 Un latido que dice "todo bien" cada media hora se silencia en dos días, y ahí
 se acaba el proyecto. Prefiere callarte de más antes que hablar de más.
 
-Lee `estado.md` antes que nada: ahí está lo que ya dijiste.
+## Cuánto esfuerzo poner
+
+Cada vuelta que das cuesta, y el silencio es el resultado esperado: un latido
+que abre veinte archivos para terminar callado cuesta lo mismo que uno que
+avisa algo importante. Revisa como quien pasa la vista, no como quien audita.
+
+En orden, y parando apenas puedas:
+
+1. Lee `estado.md`. Lo que ya esté ahí como avisado no se mira de nuevo.
+2. Mira las fuentes por fuera: nombres, rutas y fechas. Listar basta. Si tienes
+   una herramienta que te da el panorama de una fuente de una sola vez, úsala
+   en vez de ir abriendo archivos uno por uno.
+3. Abre un archivo solo si por fuera ya parece candidato. La duda no alcanza
+   como razón para abrirlo.
+
+**Techo: cinco archivos por latido.** Si al quinto no apareció nada, no había
+nada. No releas lo que ya leíste ni salgas a confirmar lo que ya sabes: acá
+nadie te va a pedir cuentas por un detalle que no miraste, y sí por costar caro
+todos los días.
 
 ## Qué NO decir
 

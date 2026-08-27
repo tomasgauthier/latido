@@ -176,6 +176,20 @@
     padding: .85rem 1.15rem; border-top: 1px solid var(--linea);
   }
 
+  /* ── consumo ──────────────────────────────────────────────────────────── */
+  .gasto { width: 100%; border-collapse: collapse; font-size: .875rem; }
+  .gasto th {
+    font: 500 .7rem/1 ui-monospace, Menlo, monospace; color: var(--tenue);
+    letter-spacing: .06em; text-transform: uppercase; text-align: right;
+    padding: 0 0 .5rem; border-bottom: 1px solid var(--linea);
+  }
+  .gasto th:first-child { text-align: left; }
+  .gasto td { padding: .5rem 0; text-align: right; }
+  .gasto td:first-child { text-align: left; color: var(--suave); }
+  .gasto tr + tr td { border-top: 1px solid #f7f6f3; }
+  .gasto .plata { font-variant-numeric: tabular-nums; font-weight: 500; }
+  .gasto .toks  { font-variant-numeric: tabular-nums; color: var(--suave); }
+
   /* ── bitácora ─────────────────────────────────────────────────────────── */
   .dia {
     font: 500 .7rem/1 ui-monospace, Menlo, monospace; color: var(--tenue);
@@ -270,6 +284,15 @@
           <button class="act" id="btn-encender">Prender</button>
         </div>
         <p class="ayuda">El reloj y la oreja se prenden y se apagan juntos: son una sola cosa. La oreja te responde al toque; el reloj mira por su cuenta.</p>
+      </div>
+
+      <div class="caja" style="margin-top:1rem">
+        <label>Consumo</label>
+        <table class="gasto">
+          <thead><tr><th></th><th>Latidos</th><th>Tokens</th><th>Costo aprox.</th></tr></thead>
+          <tbody id="gasto"></tbody>
+        </table>
+        <p class="ayuda" id="gasto-nota"></p>
       </div>
     </section>
 
@@ -493,6 +516,36 @@ function pintarBitacora(latidos) {
   $('#bitacora').innerHTML = html;
 }
 
+const miles = n =>
+  n >= 1e6 ? (n / 1e6).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' M'
+  : n >= 1e3 ? Math.round(n / 1e3).toLocaleString('es-CL') + ' k'
+  : n.toLocaleString('es-CL');
+
+const plata = n => 'US$ ' + n.toLocaleString('es-CL',
+  { minimumFractionDigits: 2, maximumFractionDigits: n < 1 ? 3 : 2 });
+
+function pintarConsumo(c, motor) {
+  const nota = $('#gasto-nota');
+  if (!c) {
+    $('#gasto').innerHTML = '<tr><td colspan="4" class="vacio">'
+      + 'Todavía no hay nada que sumar.</td></tr>';
+    nota.textContent = motor && motor !== 'claude'
+      ? 'Este motor no informa cuánto gastó, así que acá no va a aparecer nada.'
+      : 'Se llena solo, a partir del próximo latido.';
+    return;
+  }
+  const fila = (rotulo, d) => `<tr><td>${rotulo}</td>`
+    + `<td class="toks">${d.latidos}</td>`
+    + `<td class="toks">${miles(d.tokens)}</td>`
+    + `<td class="plata">${plata(d.usd)}</td></tr>`;
+  $('#gasto').innerHTML = fila('Hoy', c.hoy)
+    + fila('Últimos 7 días', c.semana)
+    + fila('Desde el ' + (c.desde || '—'), c.total);
+  nota.textContent = 'Es el precio de lista de la API, para que sepas cuánto '
+    + 'pesa cada latido. Si andas con una suscripción, no te lo cobran aparte. '
+    + 'Los tokens incluyen los de caché, que son la mayoría y valen menos.';
+}
+
 function pintarMotores(e) {
   $('#motores').innerHTML = '';
   for (const m of e.motores.concat([{ id: 'otro', nombre: 'Otro programa', de: '',
@@ -561,6 +614,7 @@ function pintar(e) {
   $('#fuentes').innerHTML = '';
   (e.fuentes.length ? e.fuentes : [{ ruta: '', que_es: '' }]).forEach(fila);
   pintarBitacora(e.latidos || []);
+  pintarConsumo(e.consumo, e.motor);
 
   $('#raiz').classList.toggle('vivo', e.corriendo);
   const dice = e.corriendo

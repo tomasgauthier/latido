@@ -4,6 +4,7 @@ config.json
 buzon.txt
 .ultimo
 .candado
+consumo.jsonl
 __pycache__/
 .DS_Store
 bitacora/

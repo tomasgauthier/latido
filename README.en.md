@@ -186,7 +186,8 @@ argument and returns text on stdout** will do:
   "bin": "claude",
   "args": ["-p", "{prompt}", "--model", "{modelo}",
            "--permission-mode", "acceptEdits",
-           "--allowedTools", "{herramientas}"],
+           "--allowedTools", "{herramientas}",
+           "--output-format", "json"],
   "flag_carpeta": "--add-dir"
 }
 ```
@@ -194,6 +195,8 @@ argument and returns text on stdout** will do:
 - `{prompt}` is replaced by the full instructions.
 - `{modelo}` by whatever you pick on the page.
 - `{herramientas}` expands into several arguments, one per tool.
+- `--output-format json` is what lets it record what each beat cost.
+  If your CLI has no such flag, drop it: it still works, just without figures.
 - `flag_carpeta` is repeated once per source. Leave it empty if your CLI has no
   such concept — the model then learns the paths from the prompt and reads them
   with its own tools.

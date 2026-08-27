@@ -181,7 +181,8 @@ argumento y devuelva texto por stdout** sirve:
   "bin": "claude",
   "args": ["-p", "{prompt}", "--model", "{modelo}",
            "--permission-mode", "acceptEdits",
-           "--allowedTools", "{herramientas}"],
+           "--allowedTools", "{herramientas}",
+           "--output-format", "json"],
   "flag_carpeta": "--add-dir"
 }
 ```
@@ -189,6 +190,8 @@ argumento y devuelva texto por stdout** sirve:
 - `{prompt}` se reemplaza por las instrucciones completas.
 - `{modelo}` por lo que elijas en la página.
 - `{herramientas}` se expande en varios argumentos, uno por herramienta.
+- `--output-format json` es lo que permite anotar lo que costó cada latido.
+  Si tu CLI no lo tiene, sácalo: funciona igual, solo se queda sin cifras.
 - `flag_carpeta` se repite por cada fuente. Déjalo vacío si tu CLI no tiene ese
   concepto — entonces el modelo lee las rutas por el prompt y con sus propias
   herramientas.

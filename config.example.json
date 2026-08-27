@@ -22,19 +22,5 @@
     "Write",
     "Edit"
   ],
-  "registro": "",
-  "cli": {
-    "bin": "claude",
-    "args": [
-      "-p",
-      "{prompt}",
-      "--model",
-      "{modelo}",
-      "--permission-mode",
-      "acceptEdits",
-      "--allowedTools",
-      "{herramientas}"
-    ],
-    "flag_carpeta": "--add-dir"
-  }
+  "registro": ""
 }

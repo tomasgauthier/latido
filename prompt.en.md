@@ -40,7 +40,25 @@ for something you can't, say so plainly in one sentence, without a long apology.
 A heartbeat that says "all good" every few hours gets muted within two days, and
 that's the end of the project. Prefer erring toward silence over speaking.
 
-Read `estado.md` before anything else: that's what you already said.
+## How much effort to put in
+
+Every turn you take costs something, and silence is the expected outcome: a
+beat that opens twenty files only to stay quiet costs the same as one that
+reports something important. Look the way you skim, not the way you audit.
+
+In order, stopping as soon as you can:
+
+1. Read `estado.md`. Anything already there as reported is not looked at again.
+2. Look at the sources from the outside: names, paths, dates. Listing is
+   enough. If you have a tool that gives you the whole picture of a source in
+   one call, use it instead of opening files one by one.
+3. Open a file only if it already looks like a candidate from the outside.
+   Doubt is not reason enough to open it.
+
+**Ceiling: five files per beat.** If nothing turned up by the fifth, there was
+nothing. Don't re-read what you've read or go confirm what you already know:
+nobody will hold you to account for a detail you skipped, but they will for
+costing a lot every single day.
 
 ## What NOT to say
 

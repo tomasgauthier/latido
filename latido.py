@@ -16,6 +16,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -25,6 +26,7 @@ CONFIG = REPO / "config.json"
 BUZON = REPO / "buzon.txt"        # lo que dejó escucha.py
 SALIDA = REPO / "salida.txt"      # lo que el latido quiere decir, si algo
 ULTIMO = REPO / ".ultimo"         # se toca solo si el latido salió bien
+CONSUMO = REPO / "consumo.jsonl"  # un renglón por latido: qué gastó
 CANDADO = REPO / ".candado"
 API = "https://api.telegram.org/bot{}/{}"
 
@@ -49,11 +51,15 @@ def registro(cfg):
     return d
 
 
+# Ojo: esta misma lista vive en MOTORES[0] de servidor.py. Son dos copias a
+# propósito —el latido tiene que correr aunque borres la página— pero si tocas
+# una, toca la otra.
 CLI_POR_OMISION = {
     "bin": "claude",
     "args": ["-p", "{prompt}", "--model", "{modelo}",
              "--permission-mode", "acceptEdits",
-             "--allowedTools", "{herramientas}"],
+             "--allowedTools", "{herramientas}",
+             "--output-format", "json"],
     "flag_carpeta": "--add-dir",
 }
 
@@ -132,6 +138,29 @@ def enviar(cfg, texto):
         return False
 
 
+
+def tecleando(cfg, parar):
+    """Mantiene el "escribiendo…" mientras el modelo piensa.
+
+    Telegram lo borra a los cinco segundos y acá no hay streaming: la respuesta
+    llega entera al final, medio minuto o más después. Sin esto el chat se ve
+    muerto justo cuando más está trabajando.
+    """
+    tg = cfg.get("telegram") or {}
+    if not (tg.get("token") and tg.get("chat_id")):
+        return
+    datos = urllib.parse.urlencode(
+        {"chat_id": tg["chat_id"], "action": "typing"}).encode()
+    url = API.format(tg["token"], "sendChatAction")
+    while True:
+        try:
+            urllib.request.urlopen(url, datos, timeout=10).close()
+        except Exception:
+            pass              # un tropiezo de red no apaga el aviso: se reintenta
+        if parar.wait(4):     # 4 y no 5: que no alcance a apagarse entremedio
+            return
+
+
 SEPARADOR = "\n\n---\n\n"
 
 
@@ -186,6 +215,51 @@ def armar_prompt(cfg, mensajes):
     return "\n\n".join(partes)
 
 
+def leer_salida(bruto):
+    """Separa la respuesta del consumo.
+
+    Con `--output-format json`, el CLI de Claude devuelve un objeto con el
+    texto, lo que gastó y si falló. Cualquier otro CLI devuelve texto pelado:
+    no se rompe, simplemente se queda sin cifras.
+    """
+    bruto = (bruto or "").strip()
+    try:
+        d = json.loads(bruto)
+        assert isinstance(d, dict) and "result" in d
+    except Exception:
+        return bruto, None, None
+    u = d.get("usage") or {}
+    gasto = {
+        "cuando": datetime.datetime.now().isoformat(timespec="seconds"),
+        "entrada": u.get("input_tokens") or 0,
+        "salida": u.get("output_tokens") or 0,
+        # Separados porque no valen lo mismo: releer caché es una décima parte
+        # del precio de entrada, escribirla cuesta más. Casi todo el volumen de
+        # un latido es relectura, y por eso el total de tokens asusta más que
+        # la cifra en dólares.
+        "cache_lee": u.get("cache_read_input_tokens") or 0,
+        "cache_crea": u.get("cache_creation_input_tokens") or 0,
+        # Cuántas vueltas dio: el contexto se recuenta entero en cada una, así
+        # que esto es lo que explica el tamaño del total.
+        "turnos": d.get("num_turns") or 0,
+        # Precio de lista de la API. Si andas con una suscripción no te lo
+        # cobran aparte; sirve como referencia de cuánto pesa cada latido.
+        "usd": d.get("total_cost_usd") or 0,
+        "modelo": next(iter(d.get("modelUsage") or {}), ""),
+    }
+    return str(d.get("result") or "").strip(), gasto, bool(d.get("is_error"))
+
+
+def apuntar_consumo(gasto):
+    """Telemetría de la herramienta, no vida tuya: por eso vive en el repo y no
+    en el registro. Un renglón por latido, que es todo lo que hace falta para
+    sumar por día."""
+    if not gasto:
+        return
+    with CONSUMO.open("a") as f:
+        f.write(json.dumps(gasto) + "\n")
+
+
 def anotar(cfg, linea):
     dia = datetime.date.today().isoformat()
     bit = registro(cfg) / "bitacora" / f"{dia}.md"
@@ -200,7 +274,21 @@ def anotar(cfg, linea):
 
 def main():
     os.chdir(REPO)
+    cfg = config()
 
+    # Si hay correo esperando, hay alguien esperando respuesta: que vea el
+    # "escribiendo…" desde ya, incluso mientras este latido hace la fila en el
+    # candado. Si nadie escribió, nadie está mirando el chat: no se avisa nada.
+    parar = threading.Event()
+    if BUZON.exists():
+        threading.Thread(target=tecleando, args=(cfg, parar), daemon=True).start()
+    try:
+        latir(cfg, parar)
+    finally:
+        parar.set()
+
+
+def latir(cfg, parar):
     # El reloj y escucha.py pueden coincidir, y dos latidos a la vez se pisarían
     # estado.md. El segundo espera su turno en vez de rendirse: si se rindiera,
     # el mensaje que traía se quedaría en el buzón hasta la próxima cadencia —
@@ -215,7 +303,6 @@ def main():
     else:
         return
 
-    cfg = config()
     SALIDA.unlink(missing_ok=True)
     mensajes = correo()
 
@@ -226,8 +313,10 @@ def main():
 
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        salio_bien = r.returncode == 0 and (r.stdout or "").strip()
-        linea = (r.stdout or r.stderr or "(sin salida)").strip()
+        linea, gasto, fallo = leer_salida(r.stdout)
+        salio_bien = r.returncode == 0 and linea and not fallo
+        linea = linea or (r.stderr or "").strip() or "(sin salida)"
+        apuntar_consumo(gasto)
     except subprocess.TimeoutExpired:
         salio_bien, linea = False, "ROTO: se pasó de 10 minutos y se cortó"
 
@@ -241,6 +330,10 @@ def main():
         texto = linea
         linea = f"CONTRATO: contestó a stdout en vez de {SALIDA.name} — enviado igual"
 
+    # El aviso se apaga antes de hablar: el mensaje que llega ya lo borra en el
+    # teléfono, y un "escribiendo…" que sobrevive a la respuesta hace pensar que
+    # viene otra cosa.
+    parar.set()
     if texto and not enviar(cfg, texto):
         linea += "  [no se pudo enviar por Telegram]"
 
