@@ -56,24 +56,73 @@ def escribir(cfg):
     CONFIG.chmod(0o600)          # lleva el token del bot
 
 
-# ── launchd ──────────────────────────────────────────────────────────────────
+# ── quien mantiene esto vivo ─────────────────────────────────────────────────
+#
+# En un Mac es launchd; en un servidor Linux, systemd. Se detecta en vez de
+# configurarse: es una propiedad de la máquina, no una decisión del dueño. Y si
+# no hay ninguno de los dos, la página no se cae — sigue sirviendo para editar
+# el prompt, ver la bitácora y el consumo, y solo se apagan los botones de
+# prender y apagar.
+
+def sistema():
+    if shutil.which("launchctl"):
+        return "launchd"
+    if shutil.which("systemctl"):
+        return "systemd"
+    return None
+
+
+SISTEMA = sistema()
+
+# En launchd un agente es un plist con su etiqueta. En systemd, un reloj son
+# DOS unidades —un temporizador que dispara un servicio— y por eso al reloj se
+# le pregunta por su timer y no por su service.
+UNIDAD = {LATIDO: "latido", OREJA: "escucha", WEB: "web"}
+UNIDADES = pathlib.Path.home() / ".config/systemd/user"
+
 
 def lc(*args):
     return subprocess.run(["launchctl", *args], capture_output=True, text=True)
 
 
+def sc(*args):
+    return subprocess.run(["systemctl", "--user", *args], capture_output=True, text=True)
+
+
 def vivo(label):
-    return lc("print", f"{GUI}/{label}").returncode == 0
+    if SISTEMA == "launchd":
+        return lc("print", f"{GUI}/{label}").returncode == 0
+    if SISTEMA == "systemd":
+        # El reloj vive en su timer: el service está parado casi todo el tiempo
+        # —corre y termina— así que preguntarle a él diría "apagado" siempre.
+        u = UNIDAD[label] + (".timer" if label == LATIDO else ".service")
+        return sc("is-active", "--quiet", u).returncode == 0
+    return False
 
 
 def corriendo():
     return vivo(LATIDO)
 
 
-def agente(label, guion, **extra):
-    """Escribe el plist con las rutas de ESTE repo y lo recarga."""
+def agente(label, guion, cada=None):
+    """Deja el guion corriendo solo, con las rutas de ESTE repo.
+
+    `cada=N` es un reloj que dispara cada N segundos; sin `cada`, algo que
+    tiene que estar siempre vivo y revivir si se cae. Esos dos conceptos son
+    todo lo que latido necesita, y los dos sistemas saben hacerlos.
+    """
+    if SISTEMA == "launchd":
+        return _launchd(label, guion, cada)
+    if SISTEMA == "systemd":
+        return _systemd(label, guion, cada)
+    return False
+
+
+def _launchd(label, guion, cada):
     AGENTES.mkdir(parents=True, exist_ok=True)
     p = AGENTES / f"{label}.plist"
+    extra = {"StartInterval": int(cada), "RunAtLoad": False} if cada else \
+            {"KeepAlive": True, "RunAtLoad": True}
     p.write_bytes(plistlib.dumps({
         "Label": label,
         "ProgramArguments": ["/usr/bin/python3", str(REPO / guion)],
@@ -97,16 +146,63 @@ def agente(label, guion, **extra):
     return lc("bootstrap", GUI, str(p)).returncode == 0
 
 
+def _systemd(label, guion, cada):
+    UNIDADES.mkdir(parents=True, exist_ok=True)
+    u = UNIDAD[label]
+    # EnvironmentFile con guion: si el archivo no existe, systemd sigue. Es
+    # donde vive el token del CLI en una máquina sin navegador, y no todas las
+    # instalaciones lo necesitan.
+    cuerpo = f"""[Unit]
+Description=latido: {guion}
+After=network-online.target
+
+[Service]
+WorkingDirectory={REPO}
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-%h/.claude.env
+ExecStart=/usr/bin/python3 {REPO / guion}
+"""
+    if cada:
+        cuerpo += "Type=oneshot\nTimeoutStartSec=900\n"
+    else:
+        cuerpo += "Restart=always\nRestartSec=10\n\n[Install]\nWantedBy=default.target\n"
+    (UNIDADES / f"{u}.service").write_text(cuerpo)
+
+    if cada:
+        (UNIDADES / f"{u}.timer").write_text(f"""[Unit]
+Description=El reloj de latido
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec={int(cada)}s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+""")
+
+    sc("daemon-reload")
+    quien = f"{u}.timer" if cada else f"{u}.service"
+    # Reiniciar y no solo recargar: si la cadencia cambió, el timer viejo
+    # seguiría con la anterior hasta que algo lo tumbe.
+    sc("disable", "--now", quien)
+    return sc("enable", "--now", quien).returncode == 0
+
+
 def instalar(cadencia):
     """El reloj y la oreja son una sola cosa: se prenden y apagan juntos."""
-    a = agente(LATIDO, "latido.py", StartInterval=int(cadencia), RunAtLoad=False)
-    b = agente(OREJA, "escucha.py", KeepAlive=True, RunAtLoad=True)
+    a = agente(LATIDO, "latido.py", cada=int(cadencia))
+    b = agente(OREJA, "escucha.py")
     return a and b
 
 
 def apagar():
     for label in (LATIDO, OREJA):
-        lc("bootout", f"{GUI}/{label}")
+        if SISTEMA == "launchd":
+            lc("bootout", f"{GUI}/{label}")
+        elif SISTEMA == "systemd":
+            u = UNIDAD[label] + (".timer" if label == LATIDO else ".service")
+            sc("disable", "--now", u)
     return not corriendo()
 
 
@@ -270,6 +366,7 @@ def estado():
         "casa": str(pathlib.Path.home()),
         "basicas": BASICAS,
         "herramientas": cfg.get("herramientas") or BASICAS,
+        "sistema": SISTEMA,      # launchd, systemd, o ninguno
         "corriendo": corriendo(),
         "escuchando": vivo(OREJA),
         "ultimo": ULTIMO.read_text().strip() if ULTIMO.exists() else "",

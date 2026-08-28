@@ -666,7 +666,8 @@ function pintar(e) {
   // estado sale del último sondeo, no de si el proceso existe.
   const [, comoLeFue] = (e.sondeo || '').split(' ');
   const sorda = e.escuchando && comoLeFue && comoLeFue !== 'ok';
-  const dice = !e.corriendo ? 'Apagado'
+  const dice = !e.sistema ? 'Sin quien lo mantenga vivo'
+    : !e.corriendo ? 'Apagado'
     : !e.escuchando ? 'Latiendo, oreja caída'
     : sorda ? 'Latiendo, pero la oreja no oye'
     : 'Latiendo y escuchando';
@@ -680,7 +681,13 @@ function pintar(e) {
   $('#texto-estado').textContent = dice;
   $('#texto-estado-2').textContent = dice + '.';
   $('#desde').textContent = e.corriendo ? hace(e.ultimo) : '';
-  $('#btn-encender').textContent = e.corriendo ? 'Apagar' : 'Prender';
+  // Sin launchd ni systemd no hay a quién pedirle que mantenga esto vivo. La
+  // página sigue sirviendo para todo lo demás; lo que se apaga es la promesa
+  // que no puede cumplir.
+  const b = $('#btn-encender');
+  b.disabled = !e.sistema;
+  b.title = e.sistema ? '' : 'No encontré launchd ni systemd en esta máquina';
+  b.textContent = !e.sistema ? 'No disponible aquí' : e.corriendo ? 'Apagar' : 'Prender';
   $('#resumen').textContent = e.corriendo
     ? `Te responde al toque, y ${CADA[e.cadencia] || 'cada ' + e.cadencia + 's'} mira por su cuenta.`
     : 'Apagado — no está escuchando ni mirando nada.';
