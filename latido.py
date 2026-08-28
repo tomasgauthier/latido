@@ -304,6 +304,15 @@ def apuntar_consumo(gasto):
 def anotar(cfg, linea):
     dia = datetime.date.today().isoformat()
     bit = registro(cfg) / "bitacora" / f"{dia}.md"
+    if not bit.exists():
+        # El registro suele terminar en una bóveda con schema propio —Obsidian
+        # con Tolaria, por ejemplo, donde un archivo sin `type` no entra al
+        # grafo y nadie lo vuelve a encontrar—. El encabezado es del dueño del
+        # destino, no de este repo, así que sale de la configuración.
+        enc = (cfg.get("encabezado") or "").replace("{dia}", dia)
+        bit.write_text(f"{enc}\n" if enc else "")
+        with bit.open("a") as f:
+            f.write(f"# {dia}\n")
     with bit.open("a") as f:
         f.write(f"\n## {datetime.datetime.now():%H:%M}\n\n{linea}\n")
     # Sin git acá a propósito: un `git add -A` automático barría también lo que

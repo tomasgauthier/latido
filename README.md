@@ -109,6 +109,11 @@ que el latido le invente un archivo aparte. Sin ella, el latido no lee ni
 reescribe nada entre un latido y el siguiente; toda su memoria es la bitácora
 del día.
 
+Cada archivo de la bitácora parte con un `# YYYY-MM-DD`. Si el registro vive
+en una bóveda con schema propio —Obsidian con Tolaria, donde una nota sin
+`type` no entra al grafo—, la clave `encabezado` de `config.json` es el texto
+que va antes de ese título; `{dia}` se reemplaza por la fecha.
+
 **Por omisión van dentro del repositorio, y probablemente no es lo que quieres.**
 En *Registro* de la página puedes apuntarlas a otra carpeta: una bóveda de
 Obsidian, por ejemplo, donde las lees como cualquier otra nota. Estos archivos
