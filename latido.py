@@ -51,6 +51,17 @@ def registro(cfg):
     return d
 
 
+def memoria(cfg):
+    """El archivo donde el latido guarda su continuidad, si es que quiere uno.
+
+    `null` significa que la continuidad vive en otra parte —un sistema de
+    pendientes, una base de datos— y que este motor no tiene que inventarle
+    memoria a nadie. El valor por omisión mantiene el comportamiento de
+    siempre para quien no configuró nada.
+    """
+    return cfg.get("memoria", "estado.md")
+
+
 # Ojo: esta misma lista vive en MOTORES[0] de servidor.py. Son dos copias a
 # propósito —el latido tiene que correr aunque borres la página— pero si tocas
 # una, toca la otra.
@@ -193,9 +204,10 @@ def ahora():
 
 def armar_prompt(cfg, mensajes):
     partes = [ahora()]
-    partes.append(f"Tu memoria entre latidos es el archivo "
-                  f"`{registro(cfg) / 'estado.md'}`. Léelo apenas despiertes y "
-                  f"reescríbelo antes de dormirte.")
+    if memoria(cfg):
+        partes.append(f"Tu memoria entre latidos es el archivo "
+                      f"`{registro(cfg) / memoria(cfg)}`. Léelo apenas despiertes y "
+                      f"reescríbelo antes de dormirte.")
     if mensajes:
         # Este aviso también lo busca servidor.py (AVISO) para saber que el
         # latido lo disparó un mensaje y no el reloj. Si lo cambias, cámbialo
@@ -352,9 +364,9 @@ def latir(cfg, parar):
         # que compactar —cada latido es nueva— pero este archivo sí crece si el
         # modelo escribe de más, y ahí sí duele. Se avisa, no se trunca: cortarlo
         # a ciegas le borraría la memoria sin que nadie se entere.
-        est = registro(cfg) / "estado.md"
-        if est.exists() and est.stat().st_size > 6000:
-            linea += f"  [estado.md va en {est.stat().st_size // 1000} KB: pídele que lo pode]"
+        est = registro(cfg) / memoria(cfg) if memoria(cfg) else None
+        if est and est.exists() and est.stat().st_size > 6000:
+            linea += f"  [{est.name} va en {est.stat().st_size // 1000} KB: pídele que lo pode]"
     else:
         linea = f"ROTO: {linea}" if not linea.startswith("ROTO") else linea
 
