@@ -208,6 +208,10 @@ def armar_prompt(cfg, mensajes):
         partes.append(f"Tu memoria entre latidos es el archivo "
                       f"`{registro(cfg) / memoria(cfg)}`. Léelo apenas despiertes y "
                       f"reescríbelo antes de dormirte.")
+    bitacora_hoy = registro(cfg) / "bitacora" / f"{datetime.date.today().isoformat()}.md"
+    partes.append(f"Tu bitácora de hoy es el archivo `{bitacora_hoy}`. Ahí queda lo "
+                  f"que dijiste en cada latido de este día; la escribe el motor solo, "
+                  f"tú no tienes que tocarla. Léela para no repetirte.")
     if mensajes:
         # Este aviso también lo busca servidor.py (AVISO) para saber que el
         # latido lo disparó un mensaje y no el reloj. Si lo cambias, cámbialo
