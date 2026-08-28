@@ -11,7 +11,9 @@ few hours gets muted within two days.
 
 It runs on Claude Code in headless mode. **It does not depend on any open
 session**: every beat is a fresh session that lives for seconds and dies, and
-continuity lives in `estado.md`. Close everything and it keeps beating.
+continuity between beats lives in a configurable memory file (the `memoria`
+key in `config.json`; `estado.md` by default). Close everything and it keeps
+beating.
 
 > `prompt.md` ships in Spanish, so out of the box the agent writes to you in
 > Spanish. An English version is included — `cp prompt.en.md prompt.md` and
@@ -101,16 +103,22 @@ step, nobody gets through — not even you.
 
 ## Where the record lives
 
-The latido writes two things about your life: `bitacora/`, one file per day with
-what it said or why it stayed quiet, and `estado.md`, its memory between beats.
-That log is what makes the thing tunable — you read why it stayed quiet and
-adjust the prompt until it speaks when it should.
+The latido writes up to two things about your life: `bitacora/`, one file per
+day with what it said or why it stayed quiet, and — if you've configured a
+memory — whatever file you point `memoria` to (`config.json`; `estado.md` by
+default). That log is what makes the thing tunable — you read why it stayed
+quiet and adjust the prompt until it speaks when it should.
+
+Memory is optional: set it to `null` if continuity between beats already lives
+somewhere else — a task system, a database — and you don't want the latido
+inventing a file of its own for it. Without one, the latido reads and rewrites
+nothing between beats; its only memory is the day's log.
 
 **By default they land inside the repository, which is probably not what you
 want.** Under *Registro* on the page you can point them somewhere else — an
-Obsidian vault, say, where you read them like any other note. Both are kept out
-of git on purpose: they're your diary, not the tool, and they have no business
-travelling with the code if you ever publish this.
+Obsidian vault, say, where you read them like any other note. These files are
+kept out of git on purpose: they're your diary, not the tool, and they have no
+business travelling with the code if you ever publish this.
 
 ## Why not just a remote control?
 

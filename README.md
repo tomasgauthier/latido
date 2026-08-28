@@ -9,8 +9,10 @@ por Telegram cuando sí. En la enorme mayoría de los latidos se calla, que es e
 punto: uno que dice "todo bien" cada rato se silencia en dos días.
 
 Corre sobre Claude Code en modo headless. **No depende de ninguna sesión
-abierta**: cada latido es una sesión nueva que vive segundos y muere, y la
-continuidad vive en `estado.md`. Puedes cerrar todo y sigue latiendo.
+abierta**: cada latido es una sesión nueva que vive segundos y muere, y su
+continuidad entre latidos vive en un archivo de memoria configurable (la
+clave `memoria` en `config.json`; por omisión, `estado.md`). Puedes cerrar
+todo y sigue latiendo.
 
 ## Qué necesitas
 
@@ -95,14 +97,21 @@ hecho el paso de **Detectar**, no entra nadie — ni tú.
 
 ## Dónde queda el registro
 
-El latido escribe dos cosas sobre tu vida: `bitacora/`, un archivo por día con
-lo que dijo o por qué se calló, y `estado.md`, su memoria entre latidos. Esa
-bitácora es lo que hace calibrable la cosa — lees por qué se calló y ajustas el
-prompt hasta que hable cuando debe.
+El latido escribe hasta dos cosas sobre tu vida: `bitacora/`, un archivo por
+día con lo que dijo o por qué se calló, y —si tienes memoria configurada— el
+archivo que le pongas en `memoria` (`config.json`; por omisión, `estado.md`).
+Esa bitácora es lo que hace calibrable la cosa — lees por qué se calló y
+ajustas el prompt hasta que hable cuando debe.
+
+La memoria es opcional: ponla en `null` si la continuidad entre latidos ya
+vive en otra parte —un sistema de pendientes, una base de datos— y no quieres
+que el latido le invente un archivo aparte. Sin ella, el latido no lee ni
+reescribe nada entre un latido y el siguiente; toda su memoria es la bitácora
+del día.
 
 **Por omisión van dentro del repositorio, y probablemente no es lo que quieres.**
 En *Registro* de la página puedes apuntarlas a otra carpeta: una bóveda de
-Obsidian, por ejemplo, donde las lees como cualquier otra nota. Los dos archivos
+Obsidian, por ejemplo, donde las lees como cualquier otra nota. Estos archivos
 están fuera de git a propósito — son tu diario, no la herramienta, y no tienen
 por qué viajar si algún día publicas esto.
 

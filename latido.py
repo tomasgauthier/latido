@@ -2,8 +2,8 @@
 """Un latido.
 
 Despierta a Claude Code sin humano al teclado, mira si hay algo que decir, y se
-vuelve a dormir. Cada disparo es una sesión nueva: la continuidad vive en
-estado.md, no en la sesión.
+vuelve a dormir. Cada disparo es una sesión nueva: la continuidad, si la hay,
+vive en el archivo de memoria configurable (ver `memoria()`), no en la sesión.
 
 Lo dispara launchd por reloj, o escucha.py cuando llega un mensaje.
 A mano: ./latido.py
@@ -309,9 +309,10 @@ def main():
 
 def latir(cfg, parar):
     # El reloj y escucha.py pueden coincidir, y dos latidos a la vez se pisarían
-    # estado.md. El segundo espera su turno en vez de rendirse: si se rindiera,
-    # el mensaje que traía se quedaría en el buzón hasta la próxima cadencia —
-    # hasta un día entero de silencio, justo lo que la oreja existe para evitar.
+    # el archivo de memoria (si lo hay). El segundo espera su turno en vez de
+    # rendirse: si se rindiera, el mensaje que traía se quedaría en el buzón
+    # hasta la próxima cadencia — hasta un día entero de silencio, justo lo
+    # que la oreja existe para evitar.
     candado = CANDADO.open("w")
     for _ in range(340):                      # ~11 min: algo más que el timeout
         try:
@@ -364,10 +365,11 @@ def latir(cfg, parar):
 
     if salio_bien:
         ULTIMO.write_text(datetime.datetime.now().isoformat(timespec="seconds") + "\n")
-        # estado.md entra entero en el contexto de cada latido. No hay sesión
-        # que compactar —cada latido es nueva— pero este archivo sí crece si el
-        # modelo escribe de más, y ahí sí duele. Se avisa, no se trunca: cortarlo
-        # a ciegas le borraría la memoria sin que nadie se entere.
+        # El archivo de memoria, si lo hay, entra entero en el contexto de cada
+        # latido. No hay sesión que compactar —cada latido es nueva— pero este
+        # archivo sí crece si el modelo escribe de más, y ahí sí duele. Se
+        # avisa, no se trunca: cortarlo a ciegas le borraría la memoria sin que
+        # nadie se entere.
         est = registro(cfg) / memoria(cfg) if memoria(cfg) else None
         if est and est.exists() and est.stat().st_size > 6000:
             linea += f"  [{est.name} va en {est.stat().st_size // 1000} KB: pídele que lo pode]"
