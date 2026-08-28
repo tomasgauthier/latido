@@ -22,7 +22,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 REPO = pathlib.Path(__file__).resolve().parent
 CONFIG = REPO / "config.json"
-PROMPT = REPO / "prompt.md"
+# El prompt puede vivir fuera de este repo (config.json: "prompt"). La página
+# tiene que editar el que el latido de verdad lee: si editara el del repo
+# mientras el latido lee otro, guardarías cambios que no ocurren nunca.
+def prompt():
+    r = leer().get("prompt")
+    return pathlib.Path(os.path.expanduser(r)) if r else REPO / "prompt.md"
 ULTIMO = REPO / ".ultimo"
 CONSUMO = REPO / "consumo.jsonl"
 PULSO = REPO / ".oreja"
@@ -255,7 +260,7 @@ def estado():
         "cadencia": cfg.get("cadencia", 86400),
         "modelo": cfg.get("modelo", "sonnet"),
         "fuentes": cfg.get("fuentes") or [],
-        "prompt": PROMPT.read_text() if PROMPT.exists() else "",
+        "prompt": prompt().read_text() if prompt().exists() else "",
         "hay_token": bool(tg.get("token")),      # nunca el token mismo
         "chat_id": tg.get("chat_id") or "",
         "registro": cfg.get("registro") or "",
@@ -353,7 +358,7 @@ def guardar(d):
         tg["chat_id"] = str(d["chat_id"]).strip()
     escribir(cfg)
     if d.get("prompt"):
-        PROMPT.write_text(d["prompt"])
+        prompt().write_text(d["prompt"])
     if corriendo():
         instalar(cfg["cadencia"])       # la cadencia vive en el plist
     return {"ok": True}

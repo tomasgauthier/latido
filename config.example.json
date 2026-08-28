@@ -1,6 +1,7 @@
 {
   "cadencia": 86400,
   "modelo": "sonnet",
+  "prompt": "",
   "memoria": "estado.md",
   "telegram": {
     "token": "",

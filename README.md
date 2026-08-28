@@ -92,7 +92,7 @@ hecho el paso de **Detectar**, no entra nadie — ni tú.
 | `escucha.py` | La oreja. Espera mensajes y dispara un latido al recibirlos. |
 | `servidor.py` | La página de configuración. Biblioteca estándar, sin dependencias. |
 | `index.html` | Esa página. Un archivo, sin build. |
-| `prompt.md` | Su conducta: cuándo callarse, cómo escribir, qué ignorar. |
+| `prompt.md` | Su conducta: cuándo callarse, cómo escribir, qué ignorar. Es un ejemplo: la clave `prompt` de `config.json` lo apunta a donde quieras. |
 | `config.json` | Tu configuración y el token. En `600`, fuera de git. |
 
 ## Dónde queda el registro

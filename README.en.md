@@ -98,7 +98,7 @@ step, nobody gets through — not even you.
 | `escucha.py` | The ear. Waits for messages and fires a beat on arrival. |
 | `servidor.py` | The config page. Standard library, no dependencies. |
 | `index.html` | That page. One file, no build step. |
-| `prompt.md` | Its behavior: when to shut up, how to write, what to ignore. |
+| `prompt.md` | Its behavior: when to shut up, how to write, what to ignore. It's an example: the `prompt` key in `config.json` points it wherever you want. |
 | `config.json` | Your settings and the token. Mode `600`, out of git. |
 
 ## Where the record lives
