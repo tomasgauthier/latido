@@ -219,6 +219,13 @@ def ahora():
 
 def armar_prompt(cfg, mensajes):
     partes = [ahora()]
+    # La ruta exacta, no "el archivo salida.txt": el prompt puede venir de otro
+    # repositorio y el resto de las rutas que ve el modelo son absolutas. Sin
+    # esto escribe la respuesta al lado de la bitácora —que sí lleva ruta
+    # completa— y el dueño recibe la línea del registro en vez de su respuesta.
+    partes.append(f"Lo que quieras decirle a tu dueño va escrito en el archivo "
+                  f"`{SALIDA}`, exactamente esa ruta. Es el único camino: lo "
+                  f"que escribas en cualquier otro lado no le llega.")
     if memoria(cfg):
         partes.append(f"Tu memoria entre latidos es el archivo "
                       f"`{registro(cfg) / memoria(cfg)}`. Léelo apenas despiertes y "
