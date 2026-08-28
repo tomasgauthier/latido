@@ -23,12 +23,23 @@ REPO = pathlib.Path(__file__).resolve().parent
 CONFIG = REPO / "config.json"
 BUZON = REPO / "buzon.txt"
 OFFSET = REPO / ".offset"
+PULSO = REPO / ".oreja"   # cómo le fue al último sondeo: la oreja también se vigila
 ESPERA = 25          # segundos de long poll; Telegram admite hasta 50
 CASTIGO = 15         # cuánto esperar tras un error de red
 
 
 def log(*a):
     print(f"[{time.strftime('%H:%M:%S')}]", *a, flush=True)
+
+
+def marcar(como):
+    """El pulso de la oreja.
+
+    El latido escribe `.ultimo` cuando le va bien, pero eso solo dice que el
+    reloj funciona: la oreja puede estar sorda —otro programa leyendo el mismo
+    bot— y todo se ve sano igual. Acá queda cómo le fue al último sondeo.
+    """
+    PULSO.write_text(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {como}\n")
 
 
 def config():
@@ -43,6 +54,7 @@ def escuchar():
     tg = cfg.get("telegram") or {}
     token, propio = tg.get("token"), str(tg.get("chat_id") or "")
     if not token:
+        marcar("sin-token")
         log("sin token todavía; espero")
         return time.sleep(30)
 
@@ -53,11 +65,19 @@ def escuchar():
         with urllib.request.urlopen(url, timeout=ESPERA + 15) as r:
             d = json.load(r)
     except Exception as e:
-        log("sin respuesta de Telegram:", e)
+        # 409 no es un problema de red: es que otro programa está consultando
+        # el mismo bot. Telegram deja un solo lector, y el que pierde se queda
+        # sordo sin que nada más se vea roto.
+        choque = getattr(e, "code", None) == 409
+        marcar("conflicto" if choque else "sin-red")
+        log("otro programa está leyendo el mismo bot (409): la oreja no oye"
+            if choque else f"sin respuesta de Telegram: {e}")
         return time.sleep(CASTIGO)
 
     if not d.get("ok"):
+        marcar("rechazado")
         return time.sleep(CASTIGO)
+    marcar("ok")
 
     # Cualquiera que sepa el @usuario del bot puede escribirle, y lo que llegue
     # entra al prompt de un agente que lee tus archivos. Solo pasa lo del chat

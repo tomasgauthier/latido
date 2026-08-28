@@ -25,6 +25,11 @@ CONFIG = REPO / "config.json"
 PROMPT = REPO / "prompt.md"
 ULTIMO = REPO / ".ultimo"
 CONSUMO = REPO / "consumo.jsonl"
+PULSO = REPO / ".oreja"
+# Las transcripciones se guardan por carpeta de trabajo, y el latido siempre
+# corre en la suya: acá están sus sesiones y ninguna otra.
+SESIONES = (pathlib.Path.home() / ".claude/projects"
+            / re.sub(r"[^A-Za-z0-9]", "-", str(REPO)))
 LATIDO = "local.latido"           # el reloj: despierta cada N segundos
 OREJA = "local.latido.escucha"    # la oreja: permanente, dispara al recibir
 WEB = "local.latido.web"          # esta misma página
@@ -160,6 +165,85 @@ def consumo(dias=7):
     return r if r["total"]["latidos"] else None
 
 
+def sesiones(n=12, techo=60):
+    """Los latidos como sesiones: cuándo despertó y quién lo despertó.
+
+    Los dos orígenes que existen —el reloj, y un mensaje tuyo por Telegram—
+    salen los dos. Lo que NO sale es lo que abres tú en una terminal dentro de
+    esta carpeta: eso es trabajo sobre el latido, no el latido.
+    """
+    if not SESIONES.is_dir():
+        return []
+    salida = []
+    archivos = sorted(SESIONES.glob("*.jsonl"),
+                      key=lambda f: f.stat().st_mtime, reverse=True)
+    for f in archivos[:techo]:
+        if len(salida) >= n:
+            break
+        try:
+            fila = ojear(f)
+        except OSError:
+            continue
+        if fila:
+            salida.append(fila)
+    return salida
+
+
+# El mismo texto que arma armar_prompt() en latido.py. Son dos copias a
+# propósito —el latido tiene que correr aunque borres la página— pero si tocas
+# una, toca la otra.
+AVISO = "Tu dueño te escribió esto"
+
+
+def ojear(f):
+    """Mira una transcripción por arriba. La primera línea de usuario lo dice
+    todo: si fue un programa el que la abrió, cuándo, y con qué prompt."""
+    with f.open(errors="ignore") as fh:
+        for renglon in fh:
+            try:
+                d = json.loads(renglon)
+            except Exception:
+                continue
+            if d.get("type") != "user":
+                continue
+            if d.get("entrypoint") != "sdk-cli":
+                return None      # una sesión tuya en esta carpeta, no un latido
+            crudo = bruto(d)
+            i = crudo.find(AVISO)
+            if i < 0:
+                tipo, tema = "reloj", ""
+            else:
+                # El bloque va: aviso, advertencia de que es una persona, y el
+                # mensaje. Termina en la raya que lo separa del resto.
+                bloque = crudo[i:].split("\n\n---", 1)[0]
+                tipo = "telegram"
+                tema = " ".join(bloque.split("\n\n", 2)[-1].split())
+            return {"cuando": local(d.get("timestamp") or ""),
+                    "tipo": tipo, "tema": tema[:150],
+                    "ultimo": time.strftime("%Y-%m-%dT%H:%M:%S",
+                                            time.localtime(f.stat().st_mtime))}
+    return None
+
+
+def local(iso):
+    """Las transcripciones marcan la hora en UTC. Acá se lee en la hora de esta
+    máquina, que es la que el dueño tiene en la cabeza."""
+    try:
+        return (datetime.datetime.fromisoformat(iso.replace("Z", "+00:00"))
+                .astimezone().isoformat(timespec="seconds"))
+    except Exception:
+        return iso
+
+
+def bruto(d):
+    """El prompt tal cual, con sus saltos de línea: acá lo que importa es la
+    forma del bloque, no solo las palabras."""
+    c = (d.get("message") or {}).get("content")
+    if isinstance(c, list):
+        c = "\n".join(b.get("text", "") for b in c if isinstance(b, dict))
+    return str(c or "")
+
+
 # ── la API ───────────────────────────────────────────────────────────────────
 
 def estado():
@@ -185,6 +269,8 @@ def estado():
         "escuchando": vivo(OREJA),
         "ultimo": ULTIMO.read_text().strip() if ULTIMO.exists() else "",
         "consumo": consumo(),
+        "sondeo": PULSO.read_text().strip() if PULSO.exists() else "",
+        "sesiones": sesiones(),
         "latidos": latidos(),
     }
 

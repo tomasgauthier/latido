@@ -190,6 +190,20 @@
   .gasto .plata { font-variant-numeric: tabular-nums; font-weight: 500; }
   .gasto .toks  { font-variant-numeric: tabular-nums; color: var(--suave); }
 
+  /* ── sesiones ─────────────────────────────────────────────────────────── */
+  .ses { display: flex; gap: .85rem; padding: .6rem 0; align-items: baseline; }
+  .ses + .ses { border-top: 1px solid #f7f6f3; }
+  .ses .cuando { font: .78rem/1.6 ui-monospace, Menlo, monospace; color: var(--tenue); flex: 0 0 6.4rem; }
+  .ses .de { flex: 1 1 auto; border-left: 3px solid var(--linea); padding-left: .85rem; font-size: .875rem; }
+  .ses .donde { display: block; font: .72rem/1.5 ui-monospace, Menlo, monospace; color: var(--tenue); }
+  .ses.activa .de { border-left-color: var(--lima-t); }
+  .ses.activa .donde::after { content: " · activa"; color: var(--lima-t); }
+  .aviso {
+    margin: .9rem 0 0; padding: .7rem .85rem; font-size: .82rem; line-height: 1.55;
+    color: var(--alarma); border: 1px solid var(--alarma); background: #fffbf5;
+  }
+  .aviso:empty { display: none; }
+
   /* ── bitácora ─────────────────────────────────────────────────────────── */
   .dia {
     font: 500 .7rem/1 ui-monospace, Menlo, monospace; color: var(--tenue);
@@ -284,6 +298,7 @@
           <button class="act" id="btn-encender">Prender</button>
         </div>
         <p class="ayuda">El reloj y la oreja se prenden y se apagan juntos: son una sola cosa. La oreja te responde al toque; el reloj mira por su cuenta.</p>
+        <p class="aviso" id="aviso-oreja"></p>
       </div>
 
       <div class="caja" style="margin-top:1rem">
@@ -293,6 +308,12 @@
           <tbody id="gasto"></tbody>
         </table>
         <p class="ayuda" id="gasto-nota"></p>
+      </div>
+
+      <div class="caja" style="margin-top:1rem">
+        <label>Sesiones del latido</label>
+        <div id="sesiones"></div>
+        <p class="ayuda">Cada vez que despertó: por el reloj, o porque le escribiste por Telegram. Lo que abres tú en una terminal no sale acá.</p>
       </div>
     </section>
 
@@ -546,6 +567,27 @@ function pintarConsumo(c, motor) {
     + 'Los tokens incluyen los de caché, que son la mayoría y valen menos.';
 }
 
+const cuandito = iso => {
+  const d = new Date(iso);
+  if (isNaN(d)) return '—';
+  return d.toLocaleDateString('es-CL', { day: '2-digit', month: 'short' }).replace('.', '')
+    + ' ' + d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false });
+};
+
+function pintarSesiones(ss) {
+  if (!ss.length) return $('#sesiones').innerHTML =
+    '<p class="vacio">Todavía no ha latido ninguna vez.</p>';
+  $('#sesiones').innerHTML = ss.map(x => {
+    const viva = Date.now() - new Date(x.ultimo) < 9e5;   // 15 minutos
+    const tg = x.tipo === 'telegram';
+    return `<div class="ses ${viva ? 'activa' : ''}">`
+      + `<span class="cuando">${cuandito(x.cuando)}</span>`
+      + `<span class="de">${esc(x.tema) || 'Miró por su cuenta'}`
+      + `<span class="donde">${tg ? 'le escribiste por Telegram' : 'lo despertó el reloj'}</span>`
+      + `</span></div>`;
+  }).join('');
+}
+
 function pintarMotores(e) {
   $('#motores').innerHTML = '';
   for (const m of e.motores.concat([{ id: 'otro', nombre: 'Otro programa', de: '',
@@ -615,11 +657,25 @@ function pintar(e) {
   (e.fuentes.length ? e.fuentes : [{ ruta: '', que_es: '' }]).forEach(fila);
   pintarBitacora(e.latidos || []);
   pintarConsumo(e.consumo, e.motor);
+  pintarSesiones(e.sesiones || []);
 
   $('#raiz').classList.toggle('vivo', e.corriendo);
-  const dice = e.corriendo
-    ? (e.escuchando ? 'Latiendo y escuchando' : 'Latiendo, oreja caída')
-    : 'Apagado';
+  // Que el proceso esté vivo no significa que oiga: si otro programa se quedó
+  // con el bot, la oreja gira en vacío y todo lo demás se ve sano. Por eso el
+  // estado sale del último sondeo, no de si el proceso existe.
+  const [, comoLeFue] = (e.sondeo || '').split(' ');
+  const sorda = e.escuchando && comoLeFue && comoLeFue !== 'ok';
+  const dice = !e.corriendo ? 'Apagado'
+    : !e.escuchando ? 'Latiendo, oreja caída'
+    : sorda ? 'Latiendo, pero la oreja no oye'
+    : 'Latiendo y escuchando';
+  $('#aviso-oreja').textContent = !sorda ? ''
+    : comoLeFue === 'conflicto'
+      ? 'Otro programa está leyendo el mismo bot de Telegram y se queda con tus '
+        + 'mensajes: Telegram admite un solo lector por bot. Cierra el otro, o '
+        + 'dale al latido un bot propio.'
+    : comoLeFue === 'sin-token' ? 'Falta el token del bot.'
+    : 'La oreja no está pudiendo hablar con Telegram.';
   $('#texto-estado').textContent = dice;
   $('#texto-estado-2').textContent = dice + '.';
   $('#desde').textContent = e.corriendo ? hace(e.ultimo) : '';
