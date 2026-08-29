@@ -221,6 +221,24 @@ class FuentesDeSoloLectura(unittest.TestCase):
             self.assertFalse((destino / "sobra.md").exists())
             self.assertTrue((destino / "boveda" / "nota.md").exists())
 
+    def test_un_enlace_simbolico_no_desvia_la_copia(self):
+        # La ruta del espejo es fija, así que si alguien alcanza a plantar un
+        # enlace ahí, copytree le entregaría la bóveda entera.
+        with tempfile.TemporaryDirectory() as d:
+            raiz = pathlib.Path(d)
+            fuente = raiz / "boveda"
+            fuente.mkdir()
+            (fuente / "secreto.md").write_text("privado")
+            ajena = raiz / "ajena"
+            ajena.mkdir()
+            destino = raiz / "espejo"
+            destino.symlink_to(ajena, target_is_directory=True)
+
+            latido.espejar({"fuentes": [{"ruta": str(fuente)}]}, destino)
+
+            self.assertFalse(destino.is_symlink())
+            self.assertEqual(list(ajena.iterdir()), [])   # no le llegó nada
+
     def test_el_prompt_nombra_el_espejo_y_no_la_fuente_real(self):
         # Si el prompt sigue nombrando la ruta de verdad, el agente va a mirar
         # donde no se le entregó nada — y el espejo no sirve para nada.

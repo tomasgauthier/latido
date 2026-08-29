@@ -16,7 +16,6 @@ import os
 import pathlib
 import shutil
 import subprocess
-import tempfile
 import threading
 import time
 import urllib.parse
@@ -29,10 +28,15 @@ SALIDA = REPO / "salida.txt"      # lo que el latido quiere decir, si algo
 ULTIMO = REPO / ".ultimo"         # se toca solo si el latido salió bien
 CONSUMO = REPO / "consumo.jsonl"  # un renglón por latido: qué gastó
 # Las copias de las fuentes. Ruta fija y no una al azar: el agente guarda
-# memoria entre latidos, y una carpeta que cambia de nombre cada vez
-# convierte cualquier ruta que haya anotado en una que ya no existe.
-# Vive solo mientras dura la corrida.
-ESPEJO = pathlib.Path(tempfile.gettempdir()) / "latido-fuentes"
+# memoria entre latidos, y una carpeta que cambia de nombre cada vez convierte
+# cualquier ruta que haya anotado en una que ya no existe. Vive solo mientras
+# dura la corrida.
+#
+# Dentro del repo y NO en /tmp: una ruta predecible en un directorio que
+# cualquiera puede escribir es un enlace simbólico esperando: quien deje uno
+# ahí apuntando a su carpeta recibe una copia de la bóveda. El repo es del
+# dueño y su home no es de acceso público, así que ahí nadie puede plantarlo.
+ESPEJO = REPO / ".espejo"
 CANDADO = REPO / ".candado"
 API = "https://api.telegram.org/bot{}/{}"
 
@@ -169,6 +173,11 @@ def espejar(cfg, destino):
     # Se rehace de cero: así una corrida que murió a medias no le deja
     # archivos viejos a la siguiente. 700 porque son notas personales y /tmp
     # lo lee cualquiera.
+    # Un enlace simbólico acá desviaría la copia entera a donde apunte. No
+    # debería poder aparecer —ver ESPEJO—, pero borrarlo es una línea y
+    # confiar en la ruta es lo que falla cuando alguien mueve el repo.
+    if destino.is_symlink():
+        destino.unlink()
     shutil.rmtree(destino, ignore_errors=True)
     destino.mkdir(mode=0o700, parents=True, exist_ok=True)
 
