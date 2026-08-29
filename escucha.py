@@ -11,6 +11,7 @@ mensajes. latido.py lee el buzón que este deja.
 Lo mantiene vivo launchd con KeepAlive. A mano: ./escucha.py
 """
 
+import fcntl
 import json
 import pathlib
 import subprocess
@@ -106,7 +107,10 @@ def escuchar():
     if not nuevos:
         return
 
+    # Bajo candado: el latido vacía este mismo archivo desde otro proceso, y
+    # sin esto un mensaje escrito en el instante equivocado se perdía.
     with BUZON.open("a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
         for t in nuevos:
             f.write(t + "\n\n---\n\n")
     log(f"{len(nuevos)} mensaje(s) → latido")

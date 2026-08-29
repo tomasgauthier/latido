@@ -22,8 +22,9 @@ beating.
 
 ## What you need
 
-- **macOS.** It uses `launchd`; porting the three agents to systemd on Linux
-  hasn't been done.
+- **macOS or Linux.** On a Mac the three agents run under `launchd`; on Linux,
+  under `systemd` user units. It picks one on its own — what changes is the
+  init system, not the heartbeat.
 - **[Claude Code](https://claude.com/claude-code)** installed and logged in.
   Check with `claude -p "hello"`.
 - **A Telegram bot.** Ask [@BotFather](https://t.me/botfather) for one with

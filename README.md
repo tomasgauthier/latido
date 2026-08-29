@@ -16,8 +16,9 @@ todo y sigue latiendo.
 
 ## Qué necesitas
 
-- **macOS.** Usa `launchd`; en Linux habría que traducir los tres agentes a
-  systemd, y no está hecho.
+- **macOS o Linux.** En Mac los tres agentes se instalan con `launchd`; en
+  Linux, con unidades de usuario de `systemd`. Se elige solo — lo que cambia
+  es el sistema de arranque, no el latido.
 - **[Claude Code](https://claude.com/claude-code)** instalado y con sesión
   iniciada. Compruébalo con `claude -p "hola"`.
 - **Un bot de Telegram.** Se lo pides a [@BotFather](https://t.me/botfather) con

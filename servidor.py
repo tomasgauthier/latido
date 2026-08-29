@@ -13,6 +13,7 @@ import os
 import pathlib
 import plistlib
 import re
+import secrets
 import shutil
 import subprocess
 import time
@@ -40,6 +41,16 @@ OREJA = "local.latido.escucha"    # la oreja: permanente, dispara al recibir
 WEB = "local.latido.web"          # esta misma página
 AGENTES = pathlib.Path.home() / "Library/LaunchAgents"
 PUERTO = 8737
+
+# Escuchar en 127.0.0.1 no basta: una página cualquiera que visites puede
+# mandarle un POST a este servidor desde tu navegador, y acá se configura qué
+# binario corre el latido. La llave se inventa al arrancar, se inyecta en el
+# HTML y se exige en cada POST; una página ajena no puede leerla porque no
+# puede leer la respuesta del GET (eso sí lo impide el navegador).
+#
+# Vale igual cuando la página se publica en la tailnet con `tailscale serve`,
+# donde el 127.0.0.1 directamente no protege nada.
+LLAVE = secrets.token_urlsafe(32)
 GUI = f"gui/{os.getuid()}"
 
 
@@ -102,6 +113,23 @@ def vivo(label):
 
 def corriendo():
     return vivo(LATIDO)
+
+
+def parar_agente(label):
+    """Lo detiene sin desinstalarlo. Vuelve con arrancar_agente."""
+    if SISTEMA == "launchd":
+        return lc("bootout", f"{GUI}/{label}").returncode == 0
+    if SISTEMA == "systemd":
+        return sc("stop", UNIDAD[label] + ".service").returncode == 0
+    return False
+
+
+def arrancar_agente(label):
+    if SISTEMA == "launchd":
+        return lc("bootstrap", GUI, str(AGENTES / f"{label}.plist")).returncode == 0
+    if SISTEMA == "systemd":
+        return sc("start", UNIDAD[label] + ".service").returncode == 0
+    return False
 
 
 def agente(label, guion, cada=None):
@@ -433,6 +461,13 @@ def guardar(d):
             cli = json.loads(d["cli"])
             assert isinstance(cli, dict) and cli.get("bin"), "falta \"bin\""
             assert isinstance(cli.get("args"), list), "\"args\" tiene que ser una lista"
+            # El binario sale de la lista, no del cuerpo del POST. Un `bin`
+            # libre acá es ejecución de cualquier cosa para quien alcance esta
+            # API, y la llave de arriba es lo único que la protege: si algún
+            # día se filtra, que lo peor posible sea cambiar de motor conocido.
+            # Para uno a mano se edita config.json, que pide estar en la máquina.
+            assert cli["bin"] in {m["bin"] for m in MOTORES}, \
+                f"motor desconocido: {cli['bin']}"
         except Exception as e:
             return {"ok": False, "error": f"el motor no se guardó: {e}"}
         cfg["cli"] = cli
@@ -471,7 +506,7 @@ def detectar():
     # un segundo. No se pierde nada: acá se mira sin consumir.
     estaba = vivo(OREJA)
     if estaba:
-        lc("bootout", f"{GUI}/{OREJA}")
+        parar_agente(OREJA)
     try:
         url = f"https://api.telegram.org/bot{tok}/getUpdates?timeout=0"
         with urllib.request.urlopen(url, timeout=20) as r:
@@ -480,7 +515,7 @@ def detectar():
         return {"ok": False, "error": f"no se pudo hablar con Telegram: {e}"}
     finally:
         if estaba:
-            lc("bootstrap", GUI, str(AGENTES / f"{OREJA}.plist"))
+            arrancar_agente(OREJA)
     for u in reversed(d.get("result", [])):
         m = u.get("message") or u.get("edited_message") or {}
         chat = (m.get("chat") or {}).get("id")
@@ -520,9 +555,13 @@ def accion(cual):
     if cual == "apagar":
         return {"ok": apagar()}
     if cual == "disparar":
-        if corriendo():
+        if corriendo() and SISTEMA == "launchd":
             # sin -k: si hay un latido en vuelo no se le mata, se deja terminar
             lc("kickstart", f"{GUI}/{LATIDO}")
+        elif corriendo() and SISTEMA == "systemd":
+            # El reloj es el timer; para latir ahora se arranca el service, que
+            # es de un tiro. Si ya hay uno corriendo, systemd no lo duplica.
+            sc("start", UNIDAD[LATIDO] + ".service")
         else:
             subprocess.Popen(["/usr/bin/python3", str(REPO / "latido.py")], cwd=REPO)
         return {"ok": True}
@@ -542,7 +581,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         ruta = urllib.parse.urlparse(self.path).path
         if ruta == "/":
-            return self.responder((REPO / "index.html").read_bytes(), "text/html")
+            # La llave viaja en el HTML, no en una cookie: una cookie se manda
+            # sola en la petición de una página ajena, que es justo lo que hay
+            # que impedir.
+            html = (REPO / "index.html").read_text(encoding="utf-8")
+            return self.responder(
+                html.replace("{{LLAVE}}", LLAVE).encode("utf-8"), "text/html")
         if ruta == "/logo.svg":
             # el mismo archivo que va en el README: un solo logotipo, no dos
             return self.responder((REPO / "logo.svg").read_bytes(), "image/svg+xml")
@@ -554,6 +598,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
+        # Todo lo que cambia algo pasa por acá, así que la llave se pide una
+        # sola vez y en la puerta. compare_digest y no ==: comparar cadenas
+        # secretas con == filtra por tiempo cuánto prefijo acertaste.
+        enviada = self.headers.get("X-Latido-Llave") or ""
+        if not secrets.compare_digest(enviada, LLAVE):
+            return self.send_error(403, "falta la llave de la pagina")
         largo = int(self.headers.get("Content-Length") or 0)
         d = json.loads(self.rfile.read(largo) or "{}")
         ruta = urllib.parse.urlparse(self.path).path
@@ -574,7 +624,7 @@ if __name__ == "__main__":
     if "--instalar" in sys.argv:
         # Deja esta página siempre disponible: launchd la levanta al iniciar
         # sesión y la revive si se cae.
-        ok = agente(WEB, "servidor.py", KeepAlive=True, RunAtLoad=True)
+        ok = agente(WEB, "servidor.py")
         print("página instalada" if ok else "no se pudo instalar la página")
         raise SystemExit(0 if ok else 1)
     print(f"latido → http://127.0.0.1:{PUERTO}   (ctrl-c para salir)")

@@ -16,6 +16,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -106,7 +107,7 @@ def buscar(nombre):
     return None
 
 
-def invocacion(cfg, prompt):
+def invocacion(cfg, prompt, fuentes=None):
     """La línea de comandos, armada desde config.json.
 
     El latido no le pide nada raro a nadie: ejecuta el CLI oficial de tu
@@ -138,15 +139,69 @@ def invocacion(cfg, prompt):
         else:
             cmd.append(a)
     if cli.get("flag_carpeta"):
-        for f in cfg.get("fuentes") or []:
-            cmd += [cli["flag_carpeta"], os.path.expanduser(f["ruta"])]
+        # `fuentes` son las carpetas que se le entregan para mirar. Vienen dadas
+        # y no se leen de la config acá a propósito: quien llama decide si le
+        # pasa las de verdad o los espejos de solo lectura.
+        for d in fuentes or []:
+            cmd += [cli["flag_carpeta"], str(d)]
+        # El registro sí va de verdad: es donde escribe la bitácora.
         cmd += [cli["flag_carpeta"], str(registro(cfg))]
     return cmd
 
 
+def espejar(cfg, destino):
+    """Copia las fuentes a `destino` y devuelve las copias.
+
+    Una carpeta entregada con --add-dir queda legible Y escribible: está
+    probado. Como las fuentes son justo por donde entra texto que no escribió
+    Tomás —el radar deja ahí lo que encontró en la web—, un archivo con
+    instrucciones adentro podía hacer que el latido editara la bóveda.
+
+    Sobre la copia puede escribir lo que quiera: se borra al terminar. Son
+    carpetas de notas, cientos de kilobytes; copiarlas seis veces al día no se
+    nota. Si algún día una fuente pesa de verdad, esto hay que repensarlo.
+    """
+    copias = []
+    for f in cfg.get("fuentes") or []:
+        origen = pathlib.Path(os.path.expanduser(f.get("ruta") or ""))
+        if not origen.is_dir():
+            continue
+        nombre, n = origen.name, 2
+        while (destino / nombre).exists():      # dos fuentes pueden llamarse igual
+            nombre, n = f"{origen.name}-{n}", n + 1
+        shutil.copytree(origen, destino / nombre,
+                        ignore=shutil.ignore_patterns(".git"))
+        copias.append({**f, "ruta": str(destino / nombre)})
+    return copias
+
+
+# Telegram rechaza los mensajes más largos que esto. Sin partirlos, una
+# respuesta larga no llegaba entera: no llegaba nada.
+LIMITE_TELEGRAM = 4096
+
+
+def trozos(texto, limite=LIMITE_TELEGRAM):
+    """Parte por saltos de línea cuando alcanza, y a lo bruto cuando no."""
+    partes, resto = [], texto
+    while len(resto) > limite:
+        corte = resto.rfind("\n", 0, limite)
+        partes.append(resto[:corte if corte > 0 else limite])
+        resto = resto[corte if corte > 0 else limite:].lstrip("\n")
+    if resto:
+        partes.append(resto)
+    return partes
+
+
 def enviar(cfg, texto):
-    """Manda el mensaje. Devuelve False si no se pudo — un latido sin red sigue
-    siendo un latido, no un error."""
+    """Manda el mensaje, partido si hace falta. Devuelve False si algún trozo
+    no se pudo: media respuesta es peor que ninguna, porque parece completa."""
+    for t in trozos(texto):
+        if not _enviar_uno(cfg, t):
+            return False
+    return True
+
+
+def _enviar_uno(cfg, texto):
     tg = cfg.get("telegram") or {}
     if not (tg.get("token") and tg.get("chat_id")):
         return False
@@ -191,11 +246,20 @@ SEPARADOR = "\n\n---\n\n"
 
 
 def correo():
-    """Lo que dejó escucha.py desde el último latido. Vaciar es acusar recibo."""
+    """Lo que dejó escucha.py desde el último latido. Vaciar es acusar recibo.
+
+    Bajo candado y truncando, nunca borrando: la oreja corre en otro proceso y
+    escribe cuando quiere. Entre un read_text() y un unlink() cabe un mensaje
+    entero, y ese mensaje no volvía nunca. Y truncar en vez de borrar porque el
+    candado vive en el inodo: si se desenlaza el archivo, la oreja que esté
+    esperando su turno escribe en un inodo que ya no tiene nombre.
+    """
     if not BUZON.exists():
         return []
-    textos = [t for t in BUZON.read_text().split(SEPARADOR) if t.strip()]
-    BUZON.unlink(missing_ok=True)
+    with BUZON.open("r+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        textos = [t for t in f.read().split(SEPARADOR) if t.strip()]
+        f.truncate(0)
     return textos
 
 
@@ -207,8 +271,13 @@ def devolver(mensajes):
     """
     if not mensajes:
         return
-    pendiente = BUZON.read_text() if BUZON.exists() else ""
-    BUZON.write_text(SEPARADOR.join(mensajes) + SEPARADOR + pendiente)
+    with BUZON.open("a+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        f.seek(0)
+        pendiente = f.read()
+        f.seek(0)
+        f.truncate(0)
+        f.write(SEPARADOR.join(mensajes) + SEPARADOR + pendiente)
 
 
 def ahora():
@@ -217,7 +286,7 @@ def ahora():
             f"{MESES[n.month - 1]} de {n.year}.")
 
 
-def armar_prompt(cfg, mensajes):
+def armar_prompt(cfg, mensajes, fuentes=None):
     partes = [ahora()]
     # La ruta exacta, no "el archivo salida.txt": el prompt puede venir de otro
     # repositorio y el resto de las rutas que ve el modelo son absolutas. Sin
@@ -245,7 +314,9 @@ def armar_prompt(cfg, mensajes):
             "dile que no.\n\n" + "\n\n".join(mensajes) + "\n\n---")
     partes.append(instrucciones(cfg).read_text())
 
-    fuentes = cfg.get("fuentes") or []
+    # Las que se entregaron, no las de la config: desde que se entregan
+    # espejos, nombrar las rutas reales lo mandaba a mirar donde no puede.
+    fuentes = cfg.get("fuentes") if fuentes is None else fuentes
     if fuentes:
         lineas = [f"- `{f['ruta']}` — {f['que_es']}" for f in fuentes]
         partes.append("## Qué mirar\n\n" + "\n".join(lineas) +
@@ -357,19 +428,22 @@ def latir(cfg, parar):
     SALIDA.unlink(missing_ok=True)
     mensajes = correo()
 
-    cmd = invocacion(cfg, armar_prompt(cfg, mensajes))
-    if not cmd:
-        devolver(mensajes)
-        return anotar(cfg, "ROTO: no encuentro el binario del CLI configurado")
+    with tempfile.TemporaryDirectory(prefix="latido-fuentes-") as espejo:
+        fuentes = espejar(cfg, pathlib.Path(espejo))
+        cmd = invocacion(cfg, armar_prompt(cfg, mensajes, fuentes),
+                         [f["ruta"] for f in fuentes])
+        if not cmd:
+            devolver(mensajes)
+            return anotar(cfg, "ROTO: no encuentro el binario del CLI configurado")
 
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        linea, gasto, fallo = leer_salida(r.stdout)
-        salio_bien = r.returncode == 0 and linea and not fallo
-        linea = linea or (r.stderr or "").strip() or "(sin salida)"
-        apuntar_consumo(gasto)
-    except subprocess.TimeoutExpired:
-        salio_bien, linea = False, "ROTO: se pasó de 10 minutos y se cortó"
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            linea, gasto, fallo = leer_salida(r.stdout)
+            salio_bien = r.returncode == 0 and linea and not fallo
+            linea = linea or (r.stderr or "").strip() or "(sin salida)"
+            apuntar_consumo(gasto)
+        except subprocess.TimeoutExpired:
+            salio_bien, linea = False, "ROTO: se pasó de 10 minutos y se cortó"
 
     texto = SALIDA.read_text().strip() if SALIDA.exists() else ""
     SALIDA.unlink(missing_ok=True)
@@ -385,16 +459,23 @@ def latir(cfg, parar):
     # teléfono, y un "escribiendo…" que sobrevive a la respuesta hace pensar que
     # viene otra cosa.
     parar.set()
-    if texto and not enviar(cfg, texto):
-        linea += "  [no se pudo enviar por Telegram]"
+    entregado = True
+    if texto:
+        entregado = enviar(cfg, texto)
+        if not entregado:
+            linea += "  [no se pudo enviar por Telegram]"
 
     # El interruptor de hombre muerto: solo se toca si el latido FUNCIONÓ. Si
     # midiera ejecución en vez de éxito, uno que corre y falla cada vez se
     # vería sano. Quien vigila la frescura de este archivo se entera.
-    if not salio_bien:
+    # Para quien espera al otro lado, un latido que piensa bien y no logra
+    # hablar es idéntico a uno que no corrió. Por eso la entrega cuenta igual
+    # que la ejecución: si no llegó, la pregunta vuelve a la cola y el
+    # interruptor de hombre muerto no se toca.
+    if not (salio_bien and entregado):
         devolver(mensajes)        # que lo reintente el próximo latido
 
-    if salio_bien:
+    if salio_bien and entregado:
         ULTIMO.write_text(datetime.datetime.now().isoformat(timespec="seconds") + "\n")
         # El archivo de memoria, si lo hay, entra entero en el contexto de cada
         # latido. No hay sesión que compactar —cada latido es nueva— pero este
