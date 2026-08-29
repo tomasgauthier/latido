@@ -162,6 +162,26 @@ class Entrega(unittest.TestCase):
         self.assertFalse(ok)
 
 
+class EtiquetaDelModelo(unittest.TestCase):
+    """El registro decía Haiku en corridas que eran de Sonnet."""
+
+    # Medido en el VPS: el CLI mete una llamada corta a Haiku ANTES de la
+    # buena, y modelUsage la trae primera.
+    REAL = {"claude-haiku-4-5-20251001": {"costUSD": 0.000946},
+            "claude-sonnet-5": {"costUSD": 0.0402868}}
+
+    def test_gana_el_que_hizo_el_trabajo_no_el_primero(self):
+        self.assertEqual(latido.modelo_principal(self.REAL), "claude-sonnet-5")
+
+    def test_sin_datos_no_revienta(self):
+        self.assertEqual(latido.modelo_principal(None), "")
+        self.assertEqual(latido.modelo_principal({}), "")
+
+    def test_aguanta_una_entrada_sin_costo(self):
+        self.assertEqual(
+            latido.modelo_principal({"a": None, "b": {"costUSD": 1}}), "b")
+
+
 class FuentesDeSoloLectura(unittest.TestCase):
     """--add-dir entrega lectura Y escritura: está probado contra el CLI real."""
 
@@ -183,6 +203,23 @@ class FuentesDeSoloLectura(unittest.TestCase):
 
             self.assertEqual((fuente / "nota.md").read_text(), "lo que escribió Tomás")
             self.assertFalse((fuente / "nuevo.md").exists())
+
+    def test_la_carpeta_se_rehace_y_no_arrastra_lo_de_antes(self):
+        # La ruta es fija para que el agente pueda anotarla en su memoria, así
+        # que hay que asegurarse de que no quede basura de la corrida anterior.
+        with tempfile.TemporaryDirectory() as d:
+            raiz = pathlib.Path(d)
+            fuente = raiz / "boveda"
+            fuente.mkdir()
+            (fuente / "nota.md").write_text("x")
+            destino = raiz / "espejo"
+            destino.mkdir()
+            (destino / "sobra.md").write_text("de la corrida pasada")
+
+            latido.espejar({"fuentes": [{"ruta": str(fuente)}]}, destino)
+
+            self.assertFalse((destino / "sobra.md").exists())
+            self.assertTrue((destino / "boveda" / "nota.md").exists())
 
     def test_el_prompt_nombra_el_espejo_y_no_la_fuente_real(self):
         # Si el prompt sigue nombrando la ruta de verdad, el agente va a mirar

@@ -28,6 +28,11 @@ BUZON = REPO / "buzon.txt"        # lo que dejó escucha.py
 SALIDA = REPO / "salida.txt"      # lo que el latido quiere decir, si algo
 ULTIMO = REPO / ".ultimo"         # se toca solo si el latido salió bien
 CONSUMO = REPO / "consumo.jsonl"  # un renglón por latido: qué gastó
+# Las copias de las fuentes. Ruta fija y no una al azar: el agente guarda
+# memoria entre latidos, y una carpeta que cambia de nombre cada vez
+# convierte cualquier ruta que haya anotado en una que ya no existe.
+# Vive solo mientras dura la corrida.
+ESPEJO = pathlib.Path(tempfile.gettempdir()) / "latido-fuentes"
 CANDADO = REPO / ".candado"
 API = "https://api.telegram.org/bot{}/{}"
 
@@ -161,6 +166,12 @@ def espejar(cfg, destino):
     carpetas de notas, cientos de kilobytes; copiarlas seis veces al día no se
     nota. Si algún día una fuente pesa de verdad, esto hay que repensarlo.
     """
+    # Se rehace de cero: así una corrida que murió a medias no le deja
+    # archivos viejos a la siguiente. 700 porque son notas personales y /tmp
+    # lo lee cualquiera.
+    shutil.rmtree(destino, ignore_errors=True)
+    destino.mkdir(mode=0o700, parents=True, exist_ok=True)
+
     copias = []
     for f in cfg.get("fuentes") or []:
         origen = pathlib.Path(os.path.expanduser(f.get("ruta") or ""))
@@ -327,6 +338,21 @@ def armar_prompt(cfg, mensajes, fuentes=None):
     return "\n\n".join(partes)
 
 
+def modelo_principal(uso):
+    """Cuál de todos hizo el trabajo.
+
+    `modelUsage` trae una entrada por modelo, y el CLI de Claude mete una
+    llamada corta a Haiku antes de la de verdad. Quedarse con la primera clave
+    —que era lo que se hacía— etiquetaba cada latido como Haiku aunque
+    estuviera corriendo con Sonnet: medido, $0.0009 de Haiku contra $0.04 de
+    Sonnet en la misma corrida. La cifra en dólares nunca estuvo mal, porque
+    esa sale de `total_cost_usd` y suma los dos.
+    """
+    if not uso:
+        return ""
+    return max(uso, key=lambda m: (uso[m] or {}).get("costUSD") or 0)
+
+
 def leer_salida(bruto):
     """Separa la respuesta del consumo.
 
@@ -357,7 +383,7 @@ def leer_salida(bruto):
         # Precio de lista de la API. Si andas con una suscripción no te lo
         # cobran aparte; sirve como referencia de cuánto pesa cada latido.
         "usd": d.get("total_cost_usd") or 0,
-        "modelo": next(iter(d.get("modelUsage") or {}), ""),
+        "modelo": modelo_principal(d.get("modelUsage")),
     }
     return str(d.get("result") or "").strip(), gasto, bool(d.get("is_error"))
 
@@ -428,8 +454,8 @@ def latir(cfg, parar):
     SALIDA.unlink(missing_ok=True)
     mensajes = correo()
 
-    with tempfile.TemporaryDirectory(prefix="latido-fuentes-") as espejo:
-        fuentes = espejar(cfg, pathlib.Path(espejo))
+    try:
+        fuentes = espejar(cfg, ESPEJO)
         cmd = invocacion(cfg, armar_prompt(cfg, mensajes, fuentes),
                          [f["ruta"] for f in fuentes])
         if not cmd:
@@ -444,6 +470,10 @@ def latir(cfg, parar):
             apuntar_consumo(gasto)
         except subprocess.TimeoutExpired:
             salio_bien, linea = False, "ROTO: se pasó de 10 minutos y se cortó"
+    finally:
+        # Las copias no sobreviven a la corrida: son la bóveda del dueño, y no
+        # tienen por qué quedar en /tmp hasta el próximo reinicio.
+        shutil.rmtree(ESPEJO, ignore_errors=True)
 
     texto = SALIDA.read_text().strip() if SALIDA.exists() else ""
     SALIDA.unlink(missing_ok=True)
