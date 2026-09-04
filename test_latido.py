@@ -190,6 +190,54 @@ class Puente(unittest.TestCase):
             finally:
                 servidor.shutil.which, servidor.CONFIG = original, cfg_real
 
+    def test_desvincular_borra_la_sesion_de_verdad(self):
+        # Dejarla es dejar una credencial viva: tu teléfono la sigue contando
+        # como dispositivo vinculado aunque la página diga que no hay nada.
+        with tempfile.TemporaryDirectory() as d:
+            d = pathlib.Path(d)
+            crudo = (servidor.CONFIG, servidor.SESION, servidor.QR,
+                     servidor.lc, servidor.desvincular_proceso)
+            servidor.CONFIG = d / "config.json"
+            servidor.SESION = d / "sesion"
+            servidor.QR = d / "qr.txt"
+            servidor.lc = lambda *a: types.SimpleNamespace(returncode=0, stdout="", stderr="")
+            servidor.desvincular_proceso = lambda: None
+            try:
+                servidor.SESION.mkdir()
+                (servidor.SESION / "creds.json").write_text("{}")
+                servidor.QR.write_text("un qr viejo")
+                servidor.CONFIG.write_text(json.dumps(
+                    {"cadencia": 3600, "telegram": {"token": "t", "chat_id": "1"},
+                     "whatsapp": {"token": "w", "chat_id": "56@s.whatsapp.net"}}))
+                servidor.desvincular()
+                self.assertFalse(servidor.SESION.exists())
+                self.assertFalse(servidor.QR.exists())
+                quedo = json.loads(servidor.CONFIG.read_text())
+                self.assertNotIn("whatsapp", quedo)
+                # Y lo demás intacto: desvincular no es reinstalar.
+                self.assertEqual(quedo["telegram"]["token"], "t")
+                self.assertEqual(quedo["cadencia"], 3600)
+                # Sin el bloque, el latido vuelve solo a Telegram.
+                self.assertEqual(latido.canal(quedo)["api"], latido.API)
+            finally:
+                (servidor.CONFIG, servidor.SESION, servidor.QR,
+                 servidor.lc, servidor.desvincular_proceso) = crudo
+
+    def test_el_qr_llega_a_la_pagina_mientras_dura_el_pareo(self):
+        with tempfile.TemporaryDirectory() as d:
+            crudo = (servidor.CONFIG, servidor.QR)
+            servidor.CONFIG = pathlib.Path(d) / "config.json"
+            servidor.QR = pathlib.Path(d) / "qr.txt"
+            try:
+                servidor.CONFIG.write_text(json.dumps({}))
+                self.assertEqual(servidor.whatsapp()["qr"], "")
+                servidor.QR.write_text("███ dibujo ███")
+                w = servidor.whatsapp()
+                self.assertIn("dibujo", w["qr"])
+                self.assertFalse(w["pareado"])
+            finally:
+                servidor.CONFIG, servidor.QR = crudo
+
     def test_quien_habla_por_telegram_no_necesita_node(self):
         with tempfile.TemporaryDirectory() as d:
             servidor.CONFIG = pathlib.Path(d) / "config.json"

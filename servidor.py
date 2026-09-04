@@ -240,6 +240,72 @@ def instalar(cadencia):
     return a and b and puente()
 
 
+QR = REPO / "whatsapp" / "qr.txt"      # lo deja el puente mientras espera
+SESION = REPO / "whatsapp" / "sesion"  # el vínculo: es una credencial
+
+
+def whatsapp():
+    """Lo que la página necesita saber del canal de WhatsApp.
+
+    Nunca el token: es la llave del puente, y lo mismo que con el de Telegram,
+    de acá solo sale si existe o no.
+    """
+    cfg = leer()
+    wa = cfg.get("whatsapp") or {}
+    return {
+        "pareado": bool(wa.get("token") and wa.get("chat_id")),
+        "chat_id": wa.get("chat_id") or "",
+        "hay_node": bool(node(cfg)),
+        "vivo": vivo(PUENTE),
+        # Mientras el pareo está en curso hay un QR esperando a que lo mires.
+        "qr": QR.read_text() if QR.exists() else "",
+    }
+
+
+def vincular():
+    """Arranca el pareo. El QR aparece en `qr.txt` un segundo después y la
+    página lo va a buscar sola."""
+    cfg = leer()
+    bin_node = node(cfg)
+    if not bin_node:
+        return {"ok": False, "error": 'no encuentro node: instálalo, o agrega '
+                                     '"node": "/ruta/al/binario" a config.json'}
+    desvincular_proceso()
+    QR.unlink(missing_ok=True)          # que no se vea el de la vez pasada
+    # Suelto: el pareo dura lo que tardes en sacar el teléfono, y esta petición
+    # tiene que volver ahora. El puente se apaga solo si nadie lo escanea.
+    subprocess.Popen([bin_node, "puente.js", "--parear"],
+                     cwd=REPO / "whatsapp",
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+    return {"ok": True}
+
+
+def desvincular_proceso():
+    """Mata un pareo a medio hacer. Dos pidiendo QR a la vez se estorban."""
+    subprocess.run(["pkill", "-f", "puente.js --parear"],
+                   capture_output=True)
+
+
+def desvincular():
+    """Corta el vínculo: apaga el puente, borra la sesión y limpia el bloque.
+
+    La sesión se borra de verdad. Dejarla es dejar una credencial viva que
+    sigue contando como dispositivo vinculado en tu teléfono.
+    """
+    desvincular_proceso()
+    if SISTEMA == "launchd":
+        lc("bootout", f"{GUI}/{PUENTE}")
+    elif SISTEMA == "systemd":
+        sc("disable", "--now", UNIDAD[PUENTE] + ".service")
+    shutil.rmtree(SESION, ignore_errors=True)
+    QR.unlink(missing_ok=True)
+    cfg = leer()
+    cfg.pop("whatsapp", None)
+    escribir(cfg)
+    return {"ok": True}
+
+
 def node(cfg):
     """El binario de node. Igual que el de Claude Code: se busca solo, y si lo
     tienes en un lugar raro se fija con `"node"` en config.json."""
@@ -455,6 +521,7 @@ def estado():
         "sondeo": PULSO.read_text().strip() if PULSO.exists() else "",
         "sesiones": sesiones(),
         "latidos": latidos(),
+        "whatsapp": whatsapp(),
     }
 
 
@@ -603,6 +670,10 @@ def carpetas(ruta):
 
 
 def accion(cual):
+    if cual == "vincular":
+        return vincular()
+    if cual == "desvincular":
+        return desvincular()
     if cual == "prender":
         falta = falta_para_whatsapp()
         if falta:

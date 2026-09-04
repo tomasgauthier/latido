@@ -20,13 +20,16 @@ import pino from 'pino';   // lo trae Baileys igual, pero se declara
 import http from 'node:http';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { readFileSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { esMio as _esMio, filtrar } from './filtro.js';
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG = path.join(AQUI, '..', 'config.json');
 const SESION = path.join(AQUI, 'sesion');
+// El QR también en un archivo, no solo en la terminal: es lo que mira la
+// página para poder mostrarlo sin que tengas que entrar por ssh.
+const QR = path.join(AQUI, 'qr.txt');
 const PAREAR = process.argv.includes('--parear');
 
 // Lo que va delante de cada cosa que dice el latido. Hace dos trabajos, y el
@@ -114,9 +117,12 @@ async function conectar() {
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
-      console.log('\n📱 Escanea esto desde WhatsApp → Dispositivos vinculados:\n');
-      qrcode.generate(qr, { small: true });
-      console.log('\nEsperando…\n');
+      qrcode.generate(qr, { small: true }, (dibujo) => {
+        console.log('\n📱 Escanea esto desde WhatsApp → Dispositivos vinculados:\n');
+        console.log(dibujo);
+        console.log('\nEsperando…\n');
+        if (PAREAR) { try { writeFileSync(QR, dibujo); } catch {} }
+      });
     }
 
     if (connection === 'open') {
@@ -124,6 +130,7 @@ async function conectar() {
       mio = jidNormalizedUser(sock.user.id);
       log('conectado como', mio);
       if (PAREAR) return parear();
+      borrarQR();
     }
 
     if (connection === 'close') {
@@ -169,7 +176,12 @@ async function conectar() {
   });
 }
 
+function borrarQR() {
+  try { rmSync(QR, { force: true }); } catch {}
+}
+
 function parear() {
+  borrarQR();          // ya no hay nada que escanear
   const cfg = config();
   const wa = cfg.whatsapp || (cfg.whatsapp = {});
   wa.chat_id = mio;
@@ -283,7 +295,14 @@ const servidor = http.createServer(async (req, res) => {
 
 if (PAREAR) {
   console.log('📱 vinculando. Session:', SESION, '\n');
-  conectar().catch((e) => { console.error(e); process.exit(1); });
+  // Si nadie lo escanea, esto se quedaría pidiendo QR nuevos para siempre.
+  setTimeout(() => {
+    console.log('nadie escaneó en cinco minutos; me voy.');
+    borrarQR();
+    process.exit(0);
+  }, 5 * 60 * 1000).unref?.();
+  process.on('exit', borrarQR);
+  conectar().catch((e) => { borrarQR(); console.error(e); process.exit(1); });
 } else if (!TOKEN) {
   console.error('sin parear todavía: corre `node puente.js --parear`');
   process.exit(1);

@@ -90,6 +90,10 @@
   input[readonly] { background: #fafaf9; color: var(--suave); }
   textarea { font: 13px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
   .mono { font-family: ui-monospace, Menlo, monospace; font-size: .82rem; }
+  /* El QR viene en bloques de media altura: sin interlineado apretado se
+     separan en franjas y el teléfono no lo lee. */
+  #wa-qr { line-height: 1; letter-spacing: 0; font-size: .7rem; overflow-x: auto;
+           margin: 1.25rem 0 0; }
 
   button.act {
     font: inherit; font-size: .85rem; font-weight: 500; padding: .5rem 1rem;
@@ -274,6 +278,7 @@
       <button data-va="estado">Estado</button>
       <button data-va="ritmo">Ritmo</button>
       <button data-va="telegram">Telegram</button>
+      <button data-va="whatsapp">WhatsApp</button>
       <button data-va="fuentes">Fuentes</button>
       <button data-va="registro">Registro</button>
       <button data-va="motor">Motor</button>
@@ -352,6 +357,21 @@
           </div>
         </div>
         <p class="ayuda">Guarda el token, escríbele cualquier cosa al bot desde tu Telegram, y aprieta <em>Detectar</em>. Solo pasan los mensajes de ese chat: cualquiera que sepa el nombre del bot puede escribirle, y ese texto entraría al prompt de un agente que lee tus archivos.</p>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="whatsapp">
+      <h2>WhatsApp</h2>
+      <p class="intro">La otra forma de que te hable: a tu <strong>chat contigo mismo</strong>, el que ya usas de libreta. Se vincula por QR como un dispositivo más, igual que WhatsApp Web.</p>
+      <div class="caja">
+        <div class="fila">
+          <span id="wa-estado" class="crece"></span>
+          <button class="act" id="btn-vincular">Vincular</button>
+          <button class="act" id="btn-desvincular">Desvincular</button>
+        </div>
+        <pre id="wa-qr" class="mono" hidden></pre>
+        <p class="ayuda" id="wa-ayuda"></p>
+        <p class="ayuda">Solo pasa tu chat contigo mismo: un grupo, un estado o el mensaje de un desconocido se descartan sin leerse. Ojo, que esto no usa un cliente oficial — WhatsApp puede bloquear un número si detecta automatización, y acá el número es el tuyo. Telegram no tiene ese riesgo.</p>
       </div>
     </section>
 
@@ -660,6 +680,7 @@ function pintar(e) {
   $('#token').placeholder = e.hay_token ? '•••••••• (guardado)' : 'pídeselo a @BotFather';
   $('#fuentes').innerHTML = '';
   (e.fuentes.length ? e.fuentes : [{ ruta: '', que_es: '' }]).forEach(fila);
+  pintarWhatsApp(e.whatsapp || {});
   pintarBitacora(e.latidos || []);
   pintarConsumo(e.consumo, e.motor);
   pintarSesiones(e.sesiones || []);
@@ -698,6 +719,24 @@ function pintar(e) {
 
   limpio = JSON.stringify(recoger());
   revisar();
+}
+
+function pintarWhatsApp(w) {
+  const pareando = !!w.qr;
+  $('#wa-qr').hidden = !pareando;
+  $('#wa-qr').textContent = w.qr || '';
+  $('#btn-vincular').hidden = w.pareado || pareando;
+  $('#btn-desvincular').hidden = !w.pareado;
+  $('#wa-estado').textContent = !w.hay_node ? 'Falta node en esta máquina'
+    : pareando ? 'Esperando que lo escanees…'
+    : !w.pareado ? 'Sin vincular — te habla por Telegram'
+    : w.vivo ? `Vinculado · ${w.chat_id}`
+    : `Vinculado · ${w.chat_id} — el puente no está corriendo`;
+  $('#wa-ayuda').textContent = !w.hay_node
+      ? 'El puente es de node. Instálalo, o agrega "node": "/ruta/al/binario" a config.json.'
+    : pareando ? 'Abre WhatsApp en el teléfono → Dispositivos vinculados → Vincular un dispositivo.'
+    : w.pareado && !w.vivo ? 'Aprieta Prender en Estado para levantarlo.'
+    : '';
 }
 
 // El navegador no entrega rutas absolutas desde un selector de archivos, así
@@ -791,6 +830,30 @@ $('#btn-detectar').onclick = async () => {
   const r = await api('/api/detectar', {});
   await cargar();
   decir(r.ok ? 'chat detectado' : r.error, 6000);
+};
+
+$('#btn-vincular').onclick = async () => {
+  decir('pidiendo el código…', 0);
+  const r = await api('/api/accion', { accion: 'vincular' });
+  if (!r.ok) return decir(r.error, 6000);
+  // El QR tarda un segundo en aparecer y se renueva solo mientras esperas, así
+  // que se mira seguido hasta que quede vinculado o el puente se rinda.
+  for (let i = 0; i < 100; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    const e = await api('/api/estado');
+    pintar(e);
+    if (e.whatsapp?.pareado) return decir('vinculado — aprieta Prender', 8000);
+    if (!e.whatsapp?.qr) return decir('se acabó el tiempo; inténtalo de nuevo', 6000);
+    decir('escanéalo desde el teléfono', 0);
+  }
+};
+
+$('#btn-desvincular').onclick = async () => {
+  if (!confirm('Corta el vínculo y borra la sesión. Vuelve a hablarte por Telegram.')) return;
+  decir('desvinculando…', 0);
+  await api('/api/accion', { accion: 'desvincular' });
+  await cargar();
+  decir('desvinculado', 5000);
 };
 
 $('#btn-fuente').onclick = () => { fila(); revisar(); };
