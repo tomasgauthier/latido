@@ -714,6 +714,11 @@ def carpetas(ruta):
 
 
 def accion(cual):
+    if cual == "levantar":
+        # El puente aparte de prender/apagar: al terminar de parear, el latido
+        # ya suele estar corriendo, y entonces ese botón dice "Apagar". Sin
+        # esto había que apagarlo y prenderlo de nuevo para levantar el puente.
+        return {"ok": puente()}
     if cual == "vincular":
         return vincular()
     if cual == "desvincular":

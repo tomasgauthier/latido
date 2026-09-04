@@ -367,6 +367,7 @@
         <div class="fila">
           <span id="wa-estado" class="crece"></span>
           <button class="act" id="btn-vincular">Vincular</button>
+          <button class="act" id="btn-levantar">Levantar el puente</button>
           <button class="act" id="btn-desvincular">Desvincular</button>
         </div>
         <pre id="wa-qr" class="mono" hidden></pre>
@@ -726,6 +727,7 @@ function pintarWhatsApp(w) {
   $('#wa-qr').hidden = !pareando;
   $('#wa-qr').textContent = w.qr || '';
   $('#btn-vincular').hidden = w.pareado || pareando;
+  $('#btn-levantar').hidden = !(w.pareado && !w.vivo && w.hay_node);
   $('#btn-desvincular').hidden = !w.pareado;
   $('#wa-estado').textContent = !w.hay_node ? 'Falta node en esta máquina'
     : pareando ? 'Esperando que lo escanees…'
@@ -735,7 +737,7 @@ function pintarWhatsApp(w) {
   $('#wa-ayuda').textContent = !w.hay_node
       ? 'El puente es de node. Instálalo, o agrega "node": "/ruta/al/binario" a config.json.'
     : pareando ? 'Abre WhatsApp en el teléfono → Dispositivos vinculados → Vincular un dispositivo.'
-    : w.pareado && !w.vivo ? 'Aprieta Prender en Estado para levantarlo.'
+    : w.pareado && !w.vivo ? 'El vínculo está hecho, pero falta el proceso que lo usa.'
     : '';
 }
 
@@ -842,10 +844,21 @@ $('#btn-vincular').onclick = async () => {
     await new Promise(r => setTimeout(r, 3000));
     const e = await api('/api/estado');
     pintar(e);
-    if (e.whatsapp?.pareado) return decir('vinculado — aprieta Prender', 8000);
+    if (e.whatsapp?.pareado) {
+      await api('/api/accion', { accion: 'levantar' });
+      await cargar();
+      return decir('vinculado, y el puente arriba', 8000);
+    }
     if (!e.whatsapp?.qr) return decir('se acabó el tiempo; inténtalo de nuevo', 6000);
     decir('escanéalo desde el teléfono', 0);
   }
+};
+
+$('#btn-levantar').onclick = async () => {
+  decir('levantando…', 0);
+  const r = await api('/api/accion', { accion: 'levantar' });
+  await cargar();
+  decir(r.ok ? 'puente arriba' : 'no se pudo levantar; mira el registro', 6000);
 };
 
 $('#btn-desvincular').onclick = async () => {
