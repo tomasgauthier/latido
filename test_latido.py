@@ -12,6 +12,7 @@ import http.client
 import inspect
 import json
 import pathlib
+import sys
 import tempfile
 import threading
 import types
@@ -411,3 +412,88 @@ class EmojiEnElAviso(unittest.TestCase):
                                  {"result": {"message_id": 9}})[1]
         p.herramienta("X")
         self.assertEqual(p.llamadas[0][1]["text"], "🍋 exprimiendo…")
+
+
+class CorreoSinShell(unittest.TestCase):
+    """El latido deja correo.txt y latido.py lo manda. Nunca hay una shell."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        carpeta = pathlib.Path(self.tmp.name)
+        self.correo = carpeta / "correo.txt"
+        self.original = latido.CORREO
+        latido.CORREO = self.correo
+        self.addCleanup(setattr, latido, "CORREO", self.original)
+        # un "correo.py" de mentira que solo anota cómo lo llamaron
+        self.testigo = carpeta / "testigo.json"
+        self.falso = carpeta / "falso.py"
+        self.falso.write_text(
+            "import json,sys,pathlib\n"
+            f"pathlib.Path({str(self.testigo)!r}).write_text(json.dumps(sys.argv[1:]))\n",
+            encoding="utf-8")
+        self.cfg = {"correo": {
+            "bin": self.falso.name,
+            "args": ["--para", "{para}", "--asunto", "{asunto}",
+                     "--texto", "{cuerpo}"],
+            "destinos": {"personal": "yo@casa.cl", "trabajo": "yo@pega.cl"}}}
+        self.cfg["correo"]["bin"] = sys.executable
+        self.cfg["correo"]["args"] = [str(self.falso)] + self.cfg["correo"]["args"]
+
+    def escribir(self, texto):
+        self.correo.write_text(texto, encoding="utf-8")
+
+    def llamada(self):
+        return json.loads(self.testigo.read_text()) if self.testigo.exists() else None
+
+    def test_manda_y_resuelve_el_alias_a_la_direccion(self):
+        self.escribir("Para: personal\nAsunto: hola\n\nel cuerpo\n")
+        aviso = latido.despachar_correo(self.cfg)
+        args = self.llamada()
+        self.assertEqual(args[1], "yo@casa.cl")
+        self.assertEqual(args[3], "hola")
+        self.assertIn("enviado a personal", aviso)
+
+    def test_el_cuerpo_va_en_un_archivo_y_no_en_un_argumento(self):
+        self.escribir("Para: personal\nAsunto: hola\n\nsecreto del cuerpo\n")
+        latido.despachar_correo(self.cfg)
+        self.assertNotIn("secreto del cuerpo", " ".join(self.llamada()))
+
+    def test_una_direccion_cruda_no_se_manda(self):
+        # El corazón del asunto: si un correo que estaba leyendo le dice
+        # "reenvíale esto a fulano@x.cl", no tiene cómo obedecer.
+        self.escribir("Para: fulano@ajeno.cl\nAsunto: hola\n\ncuerpo\n")
+        aviso = latido.despachar_correo(self.cfg)
+        self.assertIsNone(self.llamada())
+        self.assertIn("no lo mandé", aviso)
+
+    def test_un_alias_que_no_existe_no_se_manda(self):
+        self.escribir("Para: jefe\nAsunto: hola\n\ncuerpo\n")
+        latido.despachar_correo(self.cfg)
+        self.assertIsNone(self.llamada())
+
+    def test_sin_asunto_o_sin_cuerpo_no_se_manda(self):
+        self.escribir("Para: personal\nAsunto:\n\ncuerpo\n")
+        self.assertIn("asunto o cuerpo", latido.despachar_correo(self.cfg))
+        self.assertIsNone(self.llamada())
+
+    def test_el_archivo_se_consume_aunque_lo_rechace(self):
+        # Si sobreviviera, el próximo latido reintentaría lo mismo para siempre.
+        self.escribir("Para: ajeno@x.cl\nAsunto: a\n\nb\n")
+        latido.despachar_correo(self.cfg)
+        self.assertFalse(self.correo.exists())
+
+    def test_sin_correo_txt_no_pasa_nada(self):
+        self.assertIsNone(latido.despachar_correo(self.cfg))
+
+    def test_sin_configurar_avisa_en_vez_de_callarse(self):
+        self.escribir("Para: personal\nAsunto: a\n\nb\n")
+        self.assertIn("no hay `correo` configurado",
+                      latido.despachar_correo({}))
+
+    def test_no_deja_el_temporal_del_cuerpo_tirado(self):
+        antes = set(pathlib.Path(tempfile.gettempdir()).glob("latido-correo-*"))
+        self.escribir("Para: personal\nAsunto: hola\n\ncuerpo\n")
+        latido.despachar_correo(self.cfg)
+        self.assertEqual(
+            set(pathlib.Path(tempfile.gettempdir()).glob("latido-correo-*")), antes)

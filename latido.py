@@ -16,6 +16,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -25,6 +26,7 @@ REPO = pathlib.Path(__file__).resolve().parent
 CONFIG = REPO / "config.json"
 BUZON = REPO / "buzon.txt"        # lo que dejó escucha.py
 SALIDA = REPO / "salida.txt"      # lo que el latido quiere decir, si algo
+CORREO = REPO / "correo.txt"      # lo que quiere mandar por correo, si algo
 ULTIMO = REPO / ".ultimo"         # se toca solo si el latido salió bien
 CONSUMO = REPO / "consumo.jsonl"  # un renglón por latido: qué gastó
 # Las copias de las fuentes. Ruta fija y no una al azar: el agente guarda
@@ -273,6 +275,10 @@ VERBOS = {
 }
 VERBO_POR_OMISION = "⚙️ trabajando"
 
+# Cómo se le habla al programa que manda el correo. Configurable como el del
+# modelo: sirve cualquiera que reciba destinatario, asunto y un archivo.
+CORREO_ARGS = ["--para", "{para}", "--asunto", "{asunto}", "--texto", "{cuerpo}"]
+
 
 class Progreso:
     """Un mensaje temporal que dice QUÉ está haciendo, y se borra al terminar.
@@ -378,6 +384,77 @@ def ejecutar(cmd, timeout, al_paso=None):
         # Se mantiene la excepción de siempre: quien llama ya sabe atajarla.
         raise subprocess.TimeoutExpired(cmd, timeout)
     return "".join(salida), error, p.returncode
+
+
+
+def despachar_correo(cfg):
+    """Manda lo que el latido dejó en correo.txt. Devuelve qué anotar, o None.
+
+    Existe para no darle una shell. Un agente que lee correo y páginas web
+    recibe texto de terceros todo el día, y una shell convierte cualquiera de
+    esos textos en una orden ejecutable. Con esto el latido solo puede hacer
+    una cosa —mandar un correo— y el resto del sistema queda fuera de su
+    alcance.
+
+    El formato es el de un correo, a propósito: cabeceras arriba, línea en
+    blanco, cuerpo abajo.
+
+        Para: personal
+        Asunto: lo que sea
+
+        el cuerpo
+
+    **`Para` es un alias, nunca una dirección.** Las direcciones viven en la
+    config y el modelo no las ve: así no puede escribirle a un tercero, ni
+    porque se lo pidan dentro de un correo que estaba leyendo. Un alias que no
+    esté en la lista no se manda y queda anotado.
+    """
+    if not CORREO.exists():
+        return None
+    crudo = CORREO.read_text(encoding="utf-8")
+    CORREO.unlink(missing_ok=True)          # se consume, pase lo que pase
+
+    conf = cfg.get("correo") or {}
+    destinos = conf.get("destinos") or {}
+    if not (conf.get("bin") and destinos):
+        return "CORREO: escribió uno pero no hay `correo` configurado"
+
+    cabeceras, _, cuerpo = crudo.partition("\n\n")
+    campos = {}
+    for linea in cabeceras.splitlines():
+        clave, sep, valor = linea.partition(":")
+        if sep:
+            campos[clave.strip().lower()] = valor.strip()
+
+    alias = campos.get("para", "").lower()
+    asunto = campos.get("asunto", "").strip()
+    cuerpo = cuerpo.strip()
+    if alias not in destinos:
+        return (f"CORREO: no lo mandé, `{alias or 'sin destino'}` no es uno de "
+                f"los destinos ({', '.join(sorted(destinos))})")
+    if not (asunto and cuerpo):
+        return "CORREO: no lo mandé, le faltaba asunto o cuerpo"
+
+    # El cuerpo va en un archivo y no en un argumento: los argumentos los ve
+    # cualquiera de la máquina en la lista de procesos, y esto es correo suyo.
+    # mkstemp y no una ruta fija, que en /tmp es un enlace simbólico esperando.
+    fd, ruta = tempfile.mkstemp(prefix="latido-correo-", suffix=".txt")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(cuerpo)
+        reemplazo = {"{para}": destinos[alias], "{asunto}": asunto,
+                     "{cuerpo}": ruta}
+        cmd = [conf["bin"]] + [reemplazo.get(a, a)
+                               for a in (conf.get("args") or CORREO_ARGS)]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        except Exception as e:
+            return f"CORREO: no salió ({type(e).__name__})"
+    finally:
+        os.unlink(ruta)
+    if r.returncode != 0:
+        return f"CORREO: no salió — {(r.stderr or '').strip()[:120]}"
+    return f"CORREO: enviado a {alias} — {asunto}"
 
 
 SEPARADOR = "\n\n---\n\n"
@@ -608,6 +685,7 @@ def latir(cfg, parar, avance=None):
         return
 
     SALIDA.unlink(missing_ok=True)
+    CORREO.unlink(missing_ok=True)   # uno de un latido anterior no es de este
     mensajes = correo()
 
     try:
@@ -661,6 +739,12 @@ def latir(cfg, parar, avance=None):
     # hablar es idéntico a uno que no corrió. Por eso la entrega cuenta igual
     # que la ejecución: si no llegó, la pregunta vuelve a la cola y el
     # interruptor de hombre muerto no se toca.
+    # Después de hablar y no antes: si el correo falla, lo que tenga que decir
+    # ya salió, y el problema se cuenta en la bitácora en vez de tragarse todo.
+    aviso = despachar_correo(cfg)
+    if aviso:
+        linea += f"  [{aviso}]"
+
     if not (salio_bien and entregado):
         devolver(mensajes)        # que lo reintente el próximo latido
 
