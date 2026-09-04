@@ -303,6 +303,15 @@ def vincular():
     return {"ok": True}
 
 
+def recargar_oreja():
+    """La oreja lee por dónde hablar UNA vez, al arrancar. Si el canal cambió
+    —acabas de parear, o de desvincular— sigue preguntándole al de antes hasta
+    que se reinicie, y tú escribes al chat nuevo y no pasa nada."""
+    if vivo(OREJA):
+        parar_agente(OREJA)
+        arrancar_agente(OREJA)
+
+
 def desvincular_proceso():
     """Corta un pareo a medio hacer: dos pidiendo QR a la vez se estorban.
 
@@ -347,6 +356,7 @@ def desvincular():
     cfg = leer()
     cfg.pop("whatsapp", None)
     escribir(cfg)
+    recargar_oreja()          # que vuelva a Telegram ahora, no al próximo reinicio
     return {"ok": True}
 
 
@@ -718,7 +728,9 @@ def accion(cual):
         # El puente aparte de prender/apagar: al terminar de parear, el latido
         # ya suele estar corriendo, y entonces ese botón dice "Apagar". Sin
         # esto había que apagarlo y prenderlo de nuevo para levantar el puente.
-        return {"ok": puente()}
+        ok = puente()
+        recargar_oreja()      # si no, sigue oyendo por Telegram
+        return {"ok": ok}
     if cual == "vincular":
         return vincular()
     if cual == "desvincular":

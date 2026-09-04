@@ -237,6 +237,23 @@ class Puente(unittest.TestCase):
                         getattr(arg, "value", None), "pkill",
                         "volvió un pkill: mata por patrón, no por proceso")
 
+    def test_cambiar_de_canal_reinicia_la_oreja(self):
+        # La oreja lee el canal al arrancar y nada más. Sin reiniciarla,
+        # pareabas, escribías por WhatsApp y no pasaba nada: seguía colgada de
+        # Telegram, y todo se veía sano.
+        hechos = []
+        crudo = (servidor.vivo, servidor.parar_agente, servidor.arrancar_agente)
+        servidor.vivo = lambda label: label == servidor.OREJA
+        servidor.parar_agente = lambda l: hechos.append(("parar", l))
+        servidor.arrancar_agente = lambda l: hechos.append(("arrancar", l))
+        try:
+            servidor.recargar_oreja()
+        finally:
+            (servidor.vivo, servidor.parar_agente,
+             servidor.arrancar_agente) = crudo
+        self.assertEqual(hechos, [("parar", servidor.OREJA),
+                                  ("arrancar", servidor.OREJA)])
+
     def test_desvincular_borra_la_sesion_de_verdad(self):
         # Dejarla es dejar una credencial viva: tu teléfono la sigue contando
         # como dispositivo vinculado aunque la página diga que no hay nada.
@@ -249,6 +266,7 @@ class Puente(unittest.TestCase):
             servidor.QR = d / "qr.txt"
             servidor.lc = lambda *a: types.SimpleNamespace(returncode=0, stdout="", stderr="")
             servidor.desvincular_proceso = lambda: None
+            oreja, servidor.recargar_oreja = servidor.recargar_oreja, lambda: None
             try:
                 servidor.SESION.mkdir()
                 (servidor.SESION / "creds.json").write_text("{}")
@@ -269,6 +287,7 @@ class Puente(unittest.TestCase):
             finally:
                 (servidor.CONFIG, servidor.SESION, servidor.QR,
                  servidor.lc, servidor.desvincular_proceso) = crudo
+                servidor.recargar_oreja = oreja
 
     def test_el_qr_llega_a_la_pagina_mientras_dura_el_pareo(self):
         with tempfile.TemporaryDirectory() as d:
