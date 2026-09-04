@@ -838,7 +838,7 @@ $('#btn-vincular').onclick = async () => {
   if (!r.ok) return decir(r.error, 6000);
   // El QR tarda un segundo en aparecer y se renueva solo mientras esperas, así
   // que se mira seguido hasta que quede vinculado o el puente se rinda.
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 110; i++) {   // 330s: el puente se rinde a los 300
     await new Promise(r => setTimeout(r, 3000));
     const e = await api('/api/estado');
     pintar(e);

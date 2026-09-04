@@ -15,6 +15,7 @@ import plistlib
 import re
 import secrets
 import shutil
+import signal
 import subprocess
 import time
 import urllib.parse
@@ -242,6 +243,8 @@ def instalar(cadencia):
 
 QR = REPO / "whatsapp" / "qr.txt"      # lo deja el puente mientras espera
 SESION = REPO / "whatsapp" / "sesion"  # el vínculo: es una credencial
+PID = REPO / "whatsapp" / "parear.pid"  # el pareo en curso, si lo hay
+PAREO = "latido-parear"                 # su unidad, cuando manda systemd
 
 
 def whatsapp():
@@ -274,17 +277,51 @@ def vincular():
     QR.unlink(missing_ok=True)          # que no se vea el de la vez pasada
     # Suelto: el pareo dura lo que tardes en sacar el teléfono, y esta petición
     # tiene que volver ahora. El puente se apaga solo si nadie lo escanea.
-    subprocess.Popen([bin_node, "puente.js", "--parear"],
-                     cwd=REPO / "whatsapp",
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     start_new_session=True)
+    if SISTEMA == "systemd":
+        # En su propia unidad, y no como hijo de esta página. Systemd mata el
+        # grupo entero cuando reinicia un servicio, y "Prender" reinicia la
+        # página: el pareo se moría justo al apretar el botón siguiente.
+        r = subprocess.run(
+            ["systemd-run", "--user", "--quiet", "--collect", f"--unit={PAREO}",
+             f"--working-directory={REPO / 'whatsapp'}",
+             bin_node, "puente.js", "--parear"], capture_output=True, text=True)
+        if r.returncode:
+            return {"ok": False,
+                    "error": r.stderr.strip() or "no se pudo arrancar el pareo"}
+    else:
+        proceso = subprocess.Popen(
+            [bin_node, "puente.js", "--parear"], cwd=REPO / "whatsapp",
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+        PID.write_text(str(proceso.pid))
     return {"ok": True}
 
 
 def desvincular_proceso():
-    """Mata un pareo a medio hacer. Dos pidiendo QR a la vez se estorban."""
-    subprocess.run(["pkill", "-f", "puente.js --parear"],
-                   capture_output=True)
+    """Corta un pareo a medio hacer: dos pidiendo QR a la vez se estorban.
+
+    Por unidad o por el PID anotado, nunca por patrón. `pkill -f "puente.js
+    --parear"` también mata a cualquier proceso que tenga ese texto en su
+    línea de comando — una sesión de ssh donde alguien lo escribió, por
+    ejemplo. No es hipotético: pasó probando esto.
+    """
+    if SISTEMA == "systemd":
+        sc("stop", f"{PAREO}.service")
+        return
+    try:
+        pid = int(PID.read_text().strip())
+    except Exception:
+        return
+    # El PID pudo reciclarse desde que se anotó, así que se confirma que sigue
+    # siendo el nuestro antes de mandarle nada.
+    r = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
+                       capture_output=True, text=True)
+    if "puente.js" in r.stdout:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    PID.unlink(missing_ok=True)
 
 
 def desvincular():
@@ -300,6 +337,7 @@ def desvincular():
         sc("disable", "--now", UNIDAD[PUENTE] + ".service")
     shutil.rmtree(SESION, ignore_errors=True)
     QR.unlink(missing_ok=True)
+    PID.unlink(missing_ok=True)
     cfg = leer()
     cfg.pop("whatsapp", None)
     escribir(cfg)

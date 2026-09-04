@@ -8,6 +8,7 @@ Ojo: latido.py y servidor.py guardan sus rutas en constantes de módulo. Cada
 prueba que escriba algo las redirige a una carpeta temporal — si no, esto le
 pisa el config.json y el buzón de verdad al dueño.
 """
+import ast
 import http.client
 import inspect
 import json
@@ -189,6 +190,50 @@ class Puente(unittest.TestCase):
                 self.assertEqual(servidor.falta_para_whatsapp(), "")
             finally:
                 servidor.shutil.which, servidor.CONFIG = original, cfg_real
+
+    def test_cortar_el_pareo_no_mata_a_un_desconocido(self):
+        # Esto era `pkill -f "puente.js --parear"`, que también mata a
+        # cualquiera con ese texto en su línea de comando. Mató una sesión de
+        # ssh probándolo. Ahora se anota el PID y se confirma quién es.
+        import subprocess as sp
+        ajeno = sp.Popen(["sleep", "30"])
+        with tempfile.TemporaryDirectory() as d:
+            crudo = (servidor.PID, servidor.SISTEMA)
+            servidor.PID = pathlib.Path(d) / "parear.pid"
+            servidor.SISTEMA = "launchd"        # la rama que mata por PID
+            try:
+                servidor.PID.write_text(str(ajeno.pid))
+                servidor.desvincular_proceso()
+                self.assertIsNone(ajeno.poll(), "mató un proceso que no era suyo")
+                self.assertFalse(servidor.PID.exists())   # y limpia el rastro
+            finally:
+                servidor.PID, servidor.SISTEMA = crudo
+                ajeno.kill(); ajeno.wait()
+
+    def test_en_systemd_el_pareo_va_en_su_propia_unidad(self):
+        # Como hijo de la página, systemd lo mata al reiniciar el servicio — y
+        # "Prender" reinicia el servicio. Se moría justo al apretar el botón.
+        vistos = []
+        crudo = (servidor.SISTEMA, servidor.sc, servidor.PID)
+        servidor.SISTEMA = "systemd"
+        servidor.sc = lambda *a: vistos.append(a) or types.SimpleNamespace(
+            returncode=0, stdout="", stderr="")
+        try:
+            servidor.desvincular_proceso()
+        finally:
+            servidor.SISTEMA, servidor.sc, servidor.PID = crudo
+        self.assertEqual(vistos, [("stop", "latido-parear.service")])
+
+    def test_nadie_volvio_a_poner_un_pkill_por_patron(self):
+        # Mirando llamadas y no texto: el comentario que explica por qué no se
+        # usa pkill también dice "pkill", y no es lo que se está prohibiendo.
+        arbol = ast.parse(pathlib.Path("servidor.py").read_text())
+        for n in ast.walk(arbol):
+            if isinstance(n, ast.Call):
+                for arg in ast.walk(n):
+                    self.assertNotEqual(
+                        getattr(arg, "value", None), "pkill",
+                        "volvió un pkill: mata por patrón, no por proceso")
 
     def test_desvincular_borra_la_sesion_de_verdad(self):
         # Dejarla es dejar una credencial viva: tu teléfono la sigue contando
