@@ -20,6 +20,8 @@ import time
 import urllib.parse
 import urllib.request
 
+from latido import canal   # por dónde habla: lo decide un solo sitio
+
 REPO = pathlib.Path(__file__).resolve().parent
 CONFIG = REPO / "config.json"
 BUZON = REPO / "buzon.txt"
@@ -52,7 +54,7 @@ def config():
 
 def escuchar():
     cfg = config()
-    tg = cfg.get("telegram") or {}
+    tg = canal(cfg)
     token, propio = tg.get("token"), str(tg.get("chat_id") or "")
     if not token:
         marcar("sin-token")
@@ -60,7 +62,7 @@ def escuchar():
         return time.sleep(30)
 
     off = int(OFFSET.read_text().strip()) if OFFSET.exists() else 0
-    url = (f"https://api.telegram.org/bot{token}/getUpdates?"
+    url = (tg["api"].format(token, "getUpdates") + "?"
            + urllib.parse.urlencode({"timeout": ESPERA, "offset": off}))
     try:
         with urllib.request.urlopen(url, timeout=ESPERA + 15) as r:

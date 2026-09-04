@@ -153,6 +153,72 @@ It only has the tools you give it under `herramientas` in `config.json`. Out of
 the box it reads files and writes; to let it use one of your MCP servers, add
 that tool's name to the list.
 
+## WhatsApp instead of Telegram
+
+If the chat you actually live in is WhatsApp, the heartbeat can write you
+there: to your **self-chat**, the one you already use as a notepad. You link
+the heartbeat as one more device — the same QR from *Linked devices* — and from
+then on that chat belongs to both of you.
+
+WhatsApp has no bot you can just ask for the way Telegram does, so a bridge is
+needed. It lives in `whatsapp/`, it is the only thing in the repo with
+dependencies, and inside it is
+[Baileys](https://github.com/WhiskeySockets/Baileys) — the WhatsApp Web client
+that Hermes' agent, among others, uses for exactly this.
+
+```sh
+cd whatsapp && npm install
+node puente.js --parear          # a QR shows up: scan it from your phone
+```
+
+Node is found the same way the Claude Code binary is; if yours lives somewhere
+odd, add `"node": "/path/to/binary"` to `config.json`.
+
+That writes your chat into `config.json`. Go back to the page and hit **Prender**:
+a fourth agent appears, `local.latido.whatsapp`, keeping the bridge alive the
+same way the ear is kept alive.
+
+**The heartbeat knows none of this.** The bridge speaks the same Telegram API —
+the five methods the heartbeat uses — on `127.0.0.1`, so from `latido.py` down
+there is not one new branch: a URL changes in `config.json` and that is all.
+While the `whatsapp` block is complete it talks through there; half-filled, it
+stays on Telegram. There is deliberately no separate switch — that is just one
+more way to end up mute.
+
+| File | What it is |
+|---|---|
+| `whatsapp/puente.js` | The bridge. Baileys inside, Telegram's face outside. |
+| `whatsapp/filtro.js` | Who gets in and who doesn't. Separate so it can be tested. |
+| `whatsapp/sesion/` | Your link. Out of git — it is a credential. |
+
+### Answering itself
+
+In a self-chat **everything arrives marked as yours**, including what the
+heartbeat just said. Unguarded, each of its messages fires another heartbeat
+that answers, forever. There are two nets, and both are needed:
+
+- The list of what this process sent, by message id.
+- A marker at the start of every message (`⏱ *Latido*`). That is the one that
+  works after the bridge restarts, when that list is empty again and all that
+  is left of the message is its text.
+
+As a bonus, the marker is what tells apart, in the chat, what it said from what
+you jotted down.
+
+And the filter is the same as Telegram's `chat_id`, failing closed: only your
+self-chat exists. A group, a status or a stranger's message is dropped
+**unread**.
+
+### What you are accepting
+
+Baileys is not an official client: it speaks the WhatsApp Web protocol by
+reverse engineering. WhatsApp can ban a number when it detects automation, and
+here the number is your everyday one. The self-chat is the least exposed
+pattern there is — nobody else sees it, the volume is a few messages a day —
+and that is why Hermes uses it, but the risk is not zero. Telegram has none of
+this: the bot is a product feature. If the number matters to you more than the
+chat, stay on Telegram.
+
 ## The model
 
 Sonnet by default. Its job is deciding **not** to speak, and that's where small

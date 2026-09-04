@@ -7,6 +7,11 @@
     "token": "",
     "chat_id": ""
   },
+  "whatsapp": {
+    "token": "",
+    "chat_id": "",
+    "api": "http://127.0.0.1:8738/bot{}/{}"
+  },
   "fuentes": [
     {
       "ruta": "~/Documentos/bandeja",

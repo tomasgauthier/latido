@@ -131,6 +131,113 @@ class Buzon(unittest.TestCase):
         self.assertEqual(len(set(recogidos)), cuantos)   # ni repetidos
 
 
+class Puente(unittest.TestCase):
+    """El puente de WhatsApp. Sus dos formas de dejar al latido mudo."""
+
+    def test_el_puente_no_revive_cuando_termina_bien(self):
+        # Si le cierras la sesión desde el teléfono, el puente termina a
+        # propósito. Reviviéndolo, pide un QR nuevo cada diez segundos para
+        # siempre. `Restart=always` es exactamente ese error.
+        with tempfile.TemporaryDirectory() as d:
+            servidor.UNIDADES = pathlib.Path(d)
+            fingido = types.SimpleNamespace(returncode=0, stdout="", stderr="")
+            original, servidor.sc = servidor.sc, lambda *a: fingido
+            try:
+                servidor._systemd(servidor.PUENTE, "whatsapp/puente.js", None,
+                                  "/usr/bin/node", solo_si_falla=True)
+            finally:
+                servidor.sc = original
+            cuerpo = (pathlib.Path(d) / "whatsapp.service").read_text()
+        self.assertIn("Restart=on-failure", cuerpo)
+        self.assertNotIn("Restart=always", cuerpo)
+        self.assertIn("/usr/bin/node", cuerpo)   # no python3
+
+    def test_en_launchd_es_lo_mismo_dicho_de_otra_forma(self):
+        with tempfile.TemporaryDirectory() as d:
+            servidor.AGENTES = pathlib.Path(d)
+            original, servidor.lc = servidor.lc, \
+                lambda *a: types.SimpleNamespace(returncode=0, stdout="", stderr="")
+            antes, servidor.vivo = servidor.vivo, lambda label: False
+            try:
+                servidor._launchd(servidor.PUENTE, "whatsapp/puente.js", None,
+                                  "/usr/bin/node", solo_si_falla=True)
+            finally:
+                servidor.lc, servidor.vivo = original, antes
+            d = json.loads(json.dumps(
+                __import__("plistlib").loads(
+                    (pathlib.Path(d) / f"{servidor.PUENTE}.plist").read_bytes())))
+        self.assertEqual(d["KeepAlive"], {"SuccessfulExit": False})
+        self.assertEqual(d["ProgramArguments"][0], "/usr/bin/node")
+
+    def test_sin_node_prender_dice_por_que_en_vez_de_callarse(self):
+        # El peor final posible: prendes, se ve prendido, y el latido le habla
+        # a un puerto donde no hay nadie. Igualito a un latido callado.
+        with tempfile.TemporaryDirectory() as d:
+            servidor.CONFIG = pathlib.Path(d) / "config.json"
+            servidor.CONFIG.write_text(json.dumps(
+                {"whatsapp": {"token": "w", "chat_id": "56@s.whatsapp.net"}}))
+            cfg_real = servidor.CONFIG
+            original, servidor.shutil.which = servidor.shutil.which, lambda x: None
+            try:
+                falta = servidor.falta_para_whatsapp()
+                self.assertIn("node", falta)
+                self.assertFalse(servidor.accion("prender")["ok"])
+                # Y con la ruta puesta a mano en config.json, deja de faltar.
+                servidor.CONFIG.write_text(json.dumps(
+                    {"node": "/usr/bin/node",
+                     "whatsapp": {"token": "w", "chat_id": "56@s.whatsapp.net"}}))
+                self.assertEqual(servidor.falta_para_whatsapp(), "")
+            finally:
+                servidor.shutil.which, servidor.CONFIG = original, cfg_real
+
+    def test_quien_habla_por_telegram_no_necesita_node(self):
+        with tempfile.TemporaryDirectory() as d:
+            servidor.CONFIG = pathlib.Path(d) / "config.json"
+            servidor.CONFIG.write_text(json.dumps(
+                {"telegram": {"token": "t", "chat_id": "1"},
+                 "whatsapp": {"token": "", "chat_id": ""}}))
+            cfg_real = servidor.CONFIG
+            original, servidor.shutil.which = servidor.shutil.which, lambda x: None
+            try:
+                self.assertEqual(servidor.falta_para_whatsapp(), "")
+                self.assertTrue(servidor.puente())      # nada que hacer, y bien
+            finally:
+                servidor.shutil.which, servidor.CONFIG = original, cfg_real
+
+
+class Canal(unittest.TestCase):
+    """Por dónde habla. Elegir mal es quedar mudo sin que nada se vea roto."""
+
+    TG = {"token": "t", "chat_id": "1"}
+    WA = {"token": "w", "chat_id": "56912345678@s.whatsapp.net"}
+
+    def test_sin_whatsapp_sigue_siendo_telegram(self):
+        c = latido.canal({"telegram": self.TG})
+        self.assertEqual(c["api"], latido.API)
+        self.assertEqual(c["chat_id"], "1")
+
+    def test_con_whatsapp_pareado_manda_whatsapp(self):
+        c = latido.canal({"telegram": self.TG, "whatsapp": self.WA})
+        self.assertIn("127.0.0.1", c["api"])
+        self.assertEqual(c["chat_id"], self.WA["chat_id"])
+
+    def test_un_whatsapp_a_medio_parear_no_secuestra_el_canal(self):
+        # Es el bloque que trae config.example.json: existe y está vacío. Si
+        # ganara, el latido hablaría a un puente que no está y se quedaría
+        # mudo — el peor resultado, porque se ve igual que uno callado.
+        for medias in ({"token": "w", "chat_id": ""}, {"token": "", "chat_id": "x"}, {}):
+            c = latido.canal({"telegram": self.TG, "whatsapp": medias})
+            self.assertEqual(c["api"], latido.API, medias)
+
+    def test_sin_nada_configurado_no_revienta(self):
+        self.assertFalse(latido.canal({}).get("token"))
+
+    def test_la_oreja_pregunta_por_donde_habla_el_latido(self):
+        # Dos definiciones de "por dónde" es una de más: la oreja escucharía
+        # en Telegram mientras el latido contesta por WhatsApp.
+        self.assertIs(escucha.canal, latido.canal)
+
+
 class Entrega(unittest.TestCase):
     """Telegram corta en 4096 y el fallo se contaba como éxito."""
 

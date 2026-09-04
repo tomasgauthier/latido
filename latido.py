@@ -42,6 +42,22 @@ ESPEJO = REPO / ".espejo"
 CANDADO = REPO / ".candado"
 API = "https://api.telegram.org/bot{}/{}"
 
+
+def canal(cfg):
+    """Por dónde habla. Devuelve token, chat_id y la URL de la API.
+
+    WhatsApp si está pareado, y si no Telegram. No hay una llave para elegir a
+    propósito: un interruptor aparte es una forma más de quedar mudo —lo
+    configuras y no pasa nada porque faltaba prenderlo.
+
+    Los dos hablan la misma API: el puente de `whatsapp/` imita la de Telegram
+    justamente para que de acá para abajo nada sepa cuál es cuál.
+    """
+    wa = cfg.get("whatsapp") or {}
+    if wa.get("token") and wa.get("chat_id"):
+        return {**wa, "api": wa.get("api") or "http://127.0.0.1:8738/bot{}/{}"}
+    return {**(cfg.get("telegram") or {}), "api": API}
+
 MESES = ("enero febrero marzo abril mayo junio julio agosto septiembre "
          "octubre noviembre diciembre").split()
 DIAS = "lunes martes miércoles jueves viernes sábado domingo".split()
@@ -224,7 +240,7 @@ def enviar(cfg, texto):
 
 
 def _enviar_uno(cfg, texto):
-    tg = cfg.get("telegram") or {}
+    tg = canal(cfg)
     if not (tg.get("token") and tg.get("chat_id")):
         return False
     # Sin parse_mode a propósito: el prompt exige texto plano, y así un
@@ -235,7 +251,7 @@ def _enviar_uno(cfg, texto):
         {"chat_id": tg["chat_id"], "text": texto}).encode()
     try:
         with urllib.request.urlopen(
-                API.format(tg["token"], "sendMessage"), datos, timeout=20) as r:
+                tg["api"].format(tg["token"], "sendMessage"), datos, timeout=20) as r:
             return json.load(r).get("ok", False)
     except Exception:
         return False
@@ -249,12 +265,12 @@ def tecleando(cfg, parar):
     llega entera al final, medio minuto o más después. Sin esto el chat se ve
     muerto justo cuando más está trabajando.
     """
-    tg = cfg.get("telegram") or {}
+    tg = canal(cfg)
     if not (tg.get("token") and tg.get("chat_id")):
         return
     datos = urllib.parse.urlencode(
         {"chat_id": tg["chat_id"], "action": "typing"}).encode()
-    url = API.format(tg["token"], "sendChatAction")
+    url = tg["api"].format(tg["token"], "sendChatAction")
     while True:
         try:
             urllib.request.urlopen(url, datos, timeout=10).close()
@@ -294,7 +310,7 @@ class Progreso:
     ESPERA = 3.0        # entre ediciones: Telegram limita, y nadie lee más rápido
 
     def __init__(self, cfg):
-        tg = cfg.get("telegram") or {}
+        tg = canal(cfg)
         self.tg = tg if (tg.get("token") and tg.get("chat_id")) else None
         self.verbos = {**VERBOS, **(cfg.get("verbos") or {})}
         self.id = None
@@ -308,7 +324,7 @@ class Progreso:
             cuerpo = urllib.parse.urlencode(
                 {"chat_id": self.tg["chat_id"], **datos}).encode()
             with urllib.request.urlopen(
-                    API.format(self.tg["token"], metodo), cuerpo, timeout=10) as r:
+                    self.tg["api"].format(self.tg["token"], metodo), cuerpo, timeout=10) as r:
                 return json.load(r)
         except Exception:
             return None
@@ -730,7 +746,7 @@ def latir(cfg, parar, avance=None):
     if texto:
         entregado = enviar(cfg, texto)
         if not entregado:
-            linea += "  [no se pudo enviar por Telegram]"
+            linea += "  [no se pudo entregar el mensaje]"
 
     # El interruptor de hombre muerto: solo se toca si el latido FUNCIONÓ. Si
     # midiera ejecución en vez de éxito, uno que corre y falla cada vez se

@@ -154,6 +154,71 @@ Solo tiene las herramientas que le des en `herramientas` (`config.json`). De
 fábrica lee archivos y escribe; si quieres que use un servidor MCP tuyo, agrega
 su nombre a esa lista.
 
+## Por WhatsApp en vez de Telegram
+
+Si el chat que ocupas todo el día es WhatsApp, el latido puede escribirte ahí:
+a tu **chat contigo mismo**, el que ya usas de libreta. Vinculas el latido como
+un dispositivo más —el mismo QR de *Dispositivos vinculados*— y desde ahí ese
+chat es de los dos.
+
+WhatsApp no tiene un bot que puedas pedir como el de Telegram, así que hace
+falta un puente. Vive en `whatsapp/`, es lo único del repo con dependencias, y
+por dentro es [Baileys](https://github.com/WhiskeySockets/Baileys) — el cliente
+de WhatsApp Web que usa, entre otros, el agente de Hermes para esto mismo.
+
+```sh
+cd whatsapp && npm install
+node puente.js --parear          # sale un QR: escanéalo desde tu teléfono
+```
+
+Node se busca solo, como el binario de Claude Code; si lo tienes en un lugar
+raro, agrega `"node": "/ruta/al/binario"` a `config.json`.
+
+Con eso queda anotado tu chat en `config.json`. Vuelve a la página y aprieta
+**Prender**: aparece un cuarto agente, `local.latido.whatsapp`, que mantiene el
+puente vivo igual que a la oreja.
+
+**El latido no se entera de nada de esto.** El puente habla la misma API de
+Telegram —los cinco métodos que el latido usa— en `127.0.0.1`, así que de
+`latido.py` para abajo no hay una sola rama nueva: cambia una URL en
+`config.json` y ya. Mientras el bloque `whatsapp` esté completo se habla por
+ahí; si está a medio llenar, se sigue por Telegram. No hay un interruptor
+aparte a propósito — es una forma más de quedar mudo.
+
+| Archivo | Qué es |
+|---|---|
+| `whatsapp/puente.js` | El puente. Baileys por dentro, cara de Telegram por fuera. |
+| `whatsapp/filtro.js` | Quién entra y quién no. Aparte para poder probarlo. |
+| `whatsapp/sesion/` | Tu vínculo. Fuera de git — es una credencial. |
+
+### Contestarse solo
+
+En un chat contigo mismo **todo llega marcado como tuyo**, incluso lo que acaba
+de decir el latido. Sin cuidado, cada mensaje suyo dispara otro latido que
+responde, para siempre. Hay dos redes, y las dos hacen falta:
+
+- La lista de lo que mandó este proceso, por id de mensaje.
+- Una marca al principio de cada mensaje (`⏱ *Latido*`). Es la que sirve
+  después de reiniciar el puente, cuando esa lista ya se vació y del mensaje
+  solo queda el texto.
+
+De paso, la marca es lo que distingue en el chat lo que dijo él de lo que
+anotaste tú.
+
+Y el filtro es el mismo que el `chat_id` de Telegram, fallando cerrado: solo
+existe tu chat contigo mismo. Un grupo, un estado o el mensaje de un
+desconocido se descartan **sin leerse**.
+
+### Lo que estás aceptando
+
+Baileys no es un cliente oficial: habla el protocolo de WhatsApp Web por
+ingeniería inversa. WhatsApp puede bloquear un número si detecta automatización,
+y acá el número es el tuyo de siempre. El chat contigo mismo es el patrón menos
+expuesto que hay —nadie más lo ve, el volumen es de unos pocos mensajes al día—
+y por eso es el que usa Hermes, pero el riesgo no es cero. Telegram no tiene
+nada de esto: el bot es una función del producto. Si el número te importa más
+que el chat, quédate en Telegram.
+
 ## El modelo
 
 Sonnet por defecto. La tarea es decidir **no** hablar, y ahí los modelos chicos

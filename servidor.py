@@ -39,6 +39,7 @@ SESIONES = (pathlib.Path.home() / ".claude/projects"
 LATIDO = "local.latido"           # el reloj: despierta cada N segundos
 OREJA = "local.latido.escucha"    # la oreja: permanente, dispara al recibir
 WEB = "local.latido.web"          # esta misma página
+PUENTE = "local.latido.whatsapp"  # el puente, solo si hablas por ahí
 AGENTES = pathlib.Path.home() / "Library/LaunchAgents"
 PUERTO = 8737
 
@@ -88,7 +89,7 @@ SISTEMA = sistema()
 # En launchd un agente es un plist con su etiqueta. En systemd, un reloj son
 # DOS unidades —un temporizador que dispara un servicio— y por eso al reloj se
 # le pregunta por su timer y no por su service.
-UNIDAD = {LATIDO: "latido", OREJA: "escucha", WEB: "web"}
+UNIDAD = {LATIDO: "latido", OREJA: "escucha", WEB: "web", PUENTE: "whatsapp"}
 UNIDADES = pathlib.Path.home() / ".config/systemd/user"
 
 
@@ -132,28 +133,42 @@ def arrancar_agente(label):
     return False
 
 
-def agente(label, guion, cada=None):
+def agente(label, guion, cada=None, programa=None, solo_si_falla=False):
     """Deja el guion corriendo solo, con las rutas de ESTE repo.
+
+    `programa` es con qué se ejecuta; por omisión, python3. El puente de
+    WhatsApp es de node, y launchd no mira el PATH para elegir el binario:
+    tiene que ir la ruta entera o el agente no arranca nunca.
+
+    `solo_si_falla` revive el proceso cuando se cae, pero NO cuando termina
+    bien. El puente lo necesita: si le cerraste la sesión desde el teléfono,
+    termina a propósito, y revivirlo sería pedir un QR nuevo para siempre.
 
     `cada=N` es un reloj que dispara cada N segundos; sin `cada`, algo que
     tiene que estar siempre vivo y revivir si se cae. Esos dos conceptos son
     todo lo que latido necesita, y los dos sistemas saben hacerlos.
     """
     if SISTEMA == "launchd":
-        return _launchd(label, guion, cada)
+        return _launchd(label, guion, cada, programa, solo_si_falla)
     if SISTEMA == "systemd":
-        return _systemd(label, guion, cada)
+        return _systemd(label, guion, cada, programa, solo_si_falla)
     return False
 
 
-def _launchd(label, guion, cada):
+def _launchd(label, guion, cada, programa=None, solo_si_falla=False):
     AGENTES.mkdir(parents=True, exist_ok=True)
     p = AGENTES / f"{label}.plist"
-    extra = {"StartInterval": int(cada), "RunAtLoad": False} if cada else \
-            {"KeepAlive": True, "RunAtLoad": True}
+    if cada:
+        extra = {"StartInterval": int(cada), "RunAtLoad": False}
+    elif solo_si_falla:
+        # SuccessfulExit=False es "revívelo cuando salga con error". Un cero
+        # significa que terminó porque quiso, y ahí se queda quieto.
+        extra = {"KeepAlive": {"SuccessfulExit": False}, "RunAtLoad": True}
+    else:
+        extra = {"KeepAlive": True, "RunAtLoad": True}
     p.write_bytes(plistlib.dumps({
         "Label": label,
-        "ProgramArguments": ["/usr/bin/python3", str(REPO / guion)],
+        "ProgramArguments": [programa or "/usr/bin/python3", str(REPO / guion)],
         "WorkingDirectory": str(REPO),
         "EnvironmentVariables": {
             "PATH": f"{pathlib.Path.home()}/.local/bin:/opt/homebrew/bin:/usr/bin:/bin",
@@ -174,7 +189,7 @@ def _launchd(label, guion, cada):
     return lc("bootstrap", GUI, str(p)).returncode == 0
 
 
-def _systemd(label, guion, cada):
+def _systemd(label, guion, cada, programa=None, solo_si_falla=False):
     UNIDADES.mkdir(parents=True, exist_ok=True)
     u = UNIDAD[label]
     # EnvironmentFile con guion: si el archivo no existe, systemd sigue. Es
@@ -188,12 +203,13 @@ After=network-online.target
 WorkingDirectory={REPO}
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=-%h/.claude.env
-ExecStart=/usr/bin/python3 {REPO / guion}
+ExecStart={programa or "/usr/bin/python3"} {REPO / guion}
 """
     if cada:
         cuerpo += "Type=oneshot\nTimeoutStartSec=900\n"
     else:
-        cuerpo += "Restart=always\nRestartSec=10\n\n[Install]\nWantedBy=default.target\n"
+        arranca = "on-failure" if solo_si_falla else "always"
+        cuerpo += f"Restart={arranca}\nRestartSec=10\n\n[Install]\nWantedBy=default.target\n"
     (UNIDADES / f"{u}.service").write_text(cuerpo)
 
     if cada:
@@ -221,11 +237,48 @@ def instalar(cadencia):
     """El reloj y la oreja son una sola cosa: se prenden y apagan juntos."""
     a = agente(LATIDO, "latido.py", cada=int(cadencia))
     b = agente(OREJA, "escucha.py")
-    return a and b
+    return a and b and puente()
+
+
+def node(cfg):
+    """El binario de node. Igual que el de Claude Code: se busca solo, y si lo
+    tienes en un lugar raro se fija con `"node"` en config.json."""
+    return cfg.get("node") or shutil.which("node")
+
+
+def falta_para_whatsapp():
+    """Qué impide que el puente corra, si es que hace falta uno. Se pregunta
+    ANTES de prender: un puente que no arranca deja al latido hablándole a un
+    puerto donde no hay nadie, y eso se ve idéntico a un latido callado."""
+    cfg = leer()
+    wa = cfg.get("whatsapp") or {}
+    if not (wa.get("token") and wa.get("chat_id")):
+        return ""
+    if not node(cfg):
+        return ('hablas por WhatsApp pero no encuentro node: instálalo, o '
+                'agrega "node": "/ruta/al/binario" a config.json')
+    return ""
+
+
+def puente():
+    """Levanta el puente de WhatsApp, si es por ahí donde habla.
+
+    Devuelve True cuando no hay nada que hacer: quien habla por Telegram no
+    tiene por qué quedarse sin prender el latido porque falte node.
+    """
+    cfg = leer()
+    wa = cfg.get("whatsapp") or {}
+    if not (wa.get("token") and wa.get("chat_id")):
+        return True
+    bin_node = node(cfg)
+    if not bin_node:
+        return False
+    return agente(PUENTE, "whatsapp/puente.js",
+                  programa=bin_node, solo_si_falla=True)
 
 
 def apagar():
-    for label in (LATIDO, OREJA):
+    for label in (LATIDO, OREJA, PUENTE):
         if SISTEMA == "launchd":
             lc("bootout", f"{GUI}/{label}")
         elif SISTEMA == "systemd":
@@ -551,6 +604,9 @@ def carpetas(ruta):
 
 def accion(cual):
     if cual == "prender":
+        falta = falta_para_whatsapp()
+        if falta:
+            return {"ok": False, "error": falta}
         return {"ok": instalar(leer().get("cadencia", 86400))}
     if cual == "apagar":
         return {"ok": apagar()}
