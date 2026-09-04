@@ -261,7 +261,13 @@ def whatsapp():
         "hay_node": bool(node(cfg)),
         "vivo": vivo(PUENTE),
         # Mientras el pareo está en curso hay un QR esperando a que lo mires.
-        "qr": QR.read_text() if QR.exists() else "",
+        # Se mira la edad y no solo si el archivo está: un pareo que murió de
+        # golpe lo deja escrito, y un QR muerto es peor que ninguno —lo
+        # escaneas, no pasa nada, y no hay forma de saber por qué. WhatsApp lo
+        # renueva cada veinte segundos, así que uno vivo siempre es reciente.
+        "qr": (QR.read_text()
+               if QR.exists() and time.time() - QR.stat().st_mtime < 90
+               else ""),
     }
 
 

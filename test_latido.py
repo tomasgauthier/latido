@@ -10,12 +10,14 @@ pisa el config.json y el buzón de verdad al dueño.
 """
 import ast
 import http.client
+import os
 import inspect
 import json
 import pathlib
 import sys
 import tempfile
 import threading
+import time
 import types
 import unittest
 from http.server import ThreadingHTTPServer
@@ -280,6 +282,11 @@ class Puente(unittest.TestCase):
                 w = servidor.whatsapp()
                 self.assertIn("dibujo", w["qr"])
                 self.assertFalse(w["pareado"])
+                # Y uno viejo no se muestra: lo dejó un pareo que ya murió, y
+                # escanearlo no haría nada sin decir por qué.
+                viejo = time.time() - 600
+                os.utime(servidor.QR, (viejo, viejo))
+                self.assertEqual(servidor.whatsapp()["qr"], "")
             finally:
                 servidor.CONFIG, servidor.QR = crudo
 
