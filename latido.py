@@ -262,6 +262,124 @@ def tecleando(cfg, parar):
             return
 
 
+# Qué decir mientras trabaja. Genérico a propósito: los nombres de herramienta
+# de cada quien viven en su config.json, no acá. El emoji va dentro del texto y
+# no como prefijo aparte: así quien escriba sus propios verbos elige el suyo, o
+# no pone ninguno, sin que el código le imponga nada.
+VERBOS = {
+    "Read": "📖 leyendo", "Write": "✍️ escribiendo", "Edit": "✏️ editando",
+    "Glob": "🔍 buscando", "Grep": "🔍 buscando", "Bash": "⚙️ ejecutando",
+    "WebSearch": "🌐 buscando en la web", "WebFetch": "📄 leyendo una página",
+}
+VERBO_POR_OMISION = "⚙️ trabajando"
+
+
+class Progreso:
+    """Un mensaje temporal que dice QUÉ está haciendo, y se borra al terminar.
+
+    `tecleando` dice que está vivo; esto dice en qué anda. Son cosas distintas
+    y conviven: el "escribiendo…" cubre el rato inicial, antes de que use la
+    primera herramienta, que es justo cuando todavía no hay nada que contar.
+
+    Es un lujo, no una obligación: cualquier fallo se traga en silencio. Que
+    el chat se vea mudo es molesto; que el latido se caiga por el adorno, no.
+    """
+
+    ESPERA = 3.0        # entre ediciones: Telegram limita, y nadie lee más rápido
+
+    def __init__(self, cfg):
+        tg = cfg.get("telegram") or {}
+        self.tg = tg if (tg.get("token") and tg.get("chat_id")) else None
+        self.verbos = {**VERBOS, **(cfg.get("verbos") or {})}
+        self.id = None
+        self.texto = None
+        self.ultimo = 0.0
+
+    def _api(self, metodo, **datos):
+        if not self.tg:
+            return None
+        try:
+            cuerpo = urllib.parse.urlencode(
+                {"chat_id": self.tg["chat_id"], **datos}).encode()
+            with urllib.request.urlopen(
+                    API.format(self.tg["token"], metodo), cuerpo, timeout=10) as r:
+                return json.load(r)
+        except Exception:
+            return None
+
+    def herramienta(self, nombre):
+        """Anuncia que empezó a usar `nombre`. Idempotente por verbo."""
+        texto = self.verbos.get(nombre, VERBO_POR_OMISION) + "…"
+        if texto == self.texto:
+            return                        # el mismo verbo dos veces no es noticia
+        ahora_ = time.monotonic()
+        if self.id and ahora_ - self.ultimo < self.ESPERA:
+            return                        # editar más seguido solo gana un 429
+        self.texto, self.ultimo = texto, ahora_
+        if self.id is None:
+            r = self._api("sendMessage", text=texto)
+            self.id = ((r or {}).get("result") or {}).get("message_id")
+        else:
+            self._api("editMessageText", message_id=self.id, text=texto)
+
+    def mirar(self, linea):
+        """Callback de cada línea del CLI. Solo entiende `stream-json`.
+
+        Con cualquier otro formato no hay eventos que leer y esto no hace
+        nada: el latido queda como estaba, sin progreso y sin romperse.
+        """
+        try:
+            d = json.loads(linea)
+            if d.get("type") != "assistant":
+                return
+            for parte in (d.get("message") or {}).get("content") or []:
+                if parte.get("type") == "tool_use":
+                    self.herramienta(parte.get("name") or "")
+        except Exception:
+            pass
+
+    def cerrar(self):
+        """Borra el mensaje. Se llama SIEMPRE, incluso si el latido se calla:
+        un "⋯ leyendo…" que queda para siempre es peor que no haber avisado."""
+        if self.id:
+            self._api("deleteMessage", message_id=self.id)
+            self.id = None
+
+
+def ejecutar(cmd, timeout, al_paso=None):
+    """Corre el CLI y devuelve (stdout, stderr, código), como subprocess.run.
+
+    La diferencia es que lee stdout a medida que sale en vez de esperar el
+    final. Solo sirve de algo si el CLI emite eventos por línea; si no, el
+    resultado es idéntico, porque igual se acumula todo y se devuelve junto.
+    """
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         text=True)
+    expiro = threading.Event()
+
+    def matar():
+        expiro.set()
+        p.kill()
+
+    reloj = threading.Timer(timeout, matar)
+    reloj.start()
+    salida = []
+    with p:                      # cierra las cañerías aunque esto se caiga
+        try:
+            for linea in p.stdout:
+                salida.append(linea)
+                if al_paso:
+                    al_paso(linea)
+            error = p.stderr.read()
+            p.wait()
+        finally:
+            reloj.cancel()
+    if expiro.is_set():
+        # Se mantiene la excepción de siempre: quien llama ya sabe atajarla.
+        raise subprocess.TimeoutExpired(cmd, timeout)
+    return "".join(salida), error, p.returncode
+
+
 SEPARADOR = "\n\n---\n\n"
 
 
@@ -362,19 +480,44 @@ def modelo_principal(uso):
     return max(uso, key=lambda m: (uso[m] or {}).get("costUSD") or 0)
 
 
+def resultado(bruto):
+    """El objeto del resultado, venga como un JSON solo o como NDJSON.
+
+    Se busca de atrás hacia adelante porque el `result` es siempre el último
+    evento, y así no se parsea todo el chorro para nada.
+    """
+    try:
+        d = json.loads(bruto)
+        if isinstance(d, dict) and "result" in d:
+            return d
+    except Exception:
+        pass
+    for linea in reversed(bruto.splitlines()):
+        try:
+            d = json.loads(linea)
+        except Exception:
+            continue
+        if isinstance(d, dict) and d.get("type") == "result" and "result" in d:
+            return d
+    return None
+
+
 def leer_salida(bruto):
     """Separa la respuesta del consumo.
 
     Con `--output-format json`, el CLI de Claude devuelve un objeto con el
-    texto, lo que gastó y si falló. Cualquier otro CLI devuelve texto pelado:
-    no se rompe, simplemente se queda sin cifras.
+    texto, lo que gastó y si falló. Con `stream-json` devuelve una línea por
+    evento y el que importa es el de tipo `result`, con las mismas claves.
+    Cualquier otro CLI devuelve texto pelado: no se rompe, simplemente se
+    queda sin cifras.
     """
     bruto = (bruto or "").strip()
-    try:
-        d = json.loads(bruto)
-        assert isinstance(d, dict) and "result" in d
-    except Exception:
-        return bruto, None, None
+    d = resultado(bruto)
+    if d is None:
+        # Si venían eventos y ninguno era el resultado, la corrida se cortó a
+        # medio camino. Devolver el bruto mandaría el JSON crudo a Telegram y
+        # a la bitácora: mejor nada, que stderr diga qué pasó.
+        return ("" if bruto.startswith("{") else bruto), None, None
     u = d.get("usage") or {}
     gasto = {
         "cuando": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -436,15 +579,19 @@ def main():
     # "escribiendo…" desde ya, incluso mientras este latido hace la fila en el
     # candado. Si nadie escribió, nadie está mirando el chat: no se avisa nada.
     parar = threading.Event()
+    avance = None
     if BUZON.exists():
         threading.Thread(target=tecleando, args=(cfg, parar), daemon=True).start()
+        avance = Progreso(cfg)
     try:
-        latir(cfg, parar)
+        latir(cfg, parar, avance)
     finally:
         parar.set()
+        if avance:
+            avance.cerrar()   # si algo reventó, que no quede el aviso colgado
 
 
-def latir(cfg, parar):
+def latir(cfg, parar, avance=None):
     # El reloj y escucha.py pueden coincidir, y dos latidos a la vez se pisarían
     # el archivo de memoria (si lo hay). El segundo espera su turno en vez de
     # rendirse: si se rindiera, el mensaje que traía se quedaría en el buzón
@@ -472,10 +619,11 @@ def latir(cfg, parar):
             return anotar(cfg, "ROTO: no encuentro el binario del CLI configurado")
 
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-            linea, gasto, fallo = leer_salida(r.stdout)
-            salio_bien = r.returncode == 0 and linea and not fallo
-            linea = linea or (r.stderr or "").strip() or "(sin salida)"
+            salida, error, codigo = ejecutar(
+                cmd, 600, avance.mirar if avance else None)
+            linea, gasto, fallo = leer_salida(salida)
+            salio_bien = codigo == 0 and linea and not fallo
+            linea = linea or (error or "").strip() or "(sin salida)"
             apuntar_consumo(gasto)
         except subprocess.TimeoutExpired:
             salio_bien, linea = False, "ROTO: se pasó de 10 minutos y se cortó"
@@ -498,6 +646,8 @@ def latir(cfg, parar):
     # teléfono, y un "escribiendo…" que sobrevive a la respuesta hace pensar que
     # viene otra cosa.
     parar.set()
+    if avance:
+        avance.cerrar()
     entregado = True
     if texto:
         entregado = enviar(cfg, texto)

@@ -272,3 +272,142 @@ class FuentesDeSoloLectura(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SalidaEnEventos(unittest.TestCase):
+    """`stream-json` manda una línea por evento, no un objeto solo."""
+
+    RESULT = json.dumps({"type": "result", "result": "hola",
+                         "usage": {"input_tokens": 7, "output_tokens": 2},
+                         "total_cost_usd": 0.01, "num_turns": 3})
+
+    def test_encuentra_el_resultado_entre_los_eventos(self):
+        bruto = "\n".join([
+            json.dumps({"type": "system", "subtype": "init"}),
+            json.dumps({"type": "assistant", "message": {"content": []}}),
+            self.RESULT])
+        texto, gasto, fallo = latido.leer_salida(bruto)
+        self.assertEqual(texto, "hola")
+        self.assertEqual(gasto["entrada"], 7)
+        self.assertEqual(gasto["turnos"], 3)
+        self.assertFalse(fallo)
+
+    def test_el_objeto_solo_de_siempre_sigue_funcionando(self):
+        texto, gasto, _ = latido.leer_salida(self.RESULT)
+        self.assertEqual(texto, "hola")
+        self.assertEqual(gasto["salida"], 2)
+
+    def test_texto_pelado_de_otro_cli_pasa_entero(self):
+        texto, gasto, _ = latido.leer_salida("respuesta cualquiera")
+        self.assertEqual(texto, "respuesta cualquiera")
+        self.assertIsNone(gasto)
+
+    def test_eventos_cortados_no_mandan_json_crudo(self):
+        # Si la corrida se corta antes del `result`, mandarle el chorro de
+        # eventos a Telegram es peor que quedarse mudo y dejar hablar a stderr.
+        bruto = json.dumps({"type": "assistant", "message": {"content": []}})
+        texto, _, _ = latido.leer_salida(bruto)
+        self.assertEqual(texto, "")
+
+
+class AvisoDeProgreso(unittest.TestCase):
+    """El mensaje temporal: qué herramienta anuncia y cuándo se calla."""
+
+    def progreso(self):
+        p = latido.Progreso({"telegram": {"token": "t", "chat_id": "1"},
+                             "verbos": {"mcp__x__ver": "mirando la bandeja"}})
+        p.llamadas = []
+        p._api = lambda m, **d: (p.llamadas.append((m, d)),
+                                 {"result": {"message_id": 9}})[1]
+        return p
+
+    def test_el_primer_uso_manda_y_los_siguientes_editan(self):
+        p = self.progreso()
+        p.herramienta("Read")
+        p.ultimo = 0            # sin esto el freno de 3s se come el segundo
+        p.herramienta("Bash")
+        self.assertEqual([m for m, _ in p.llamadas],
+                         ["sendMessage", "editMessageText"])
+
+    def test_el_verbo_sale_de_la_config_y_no_del_codigo(self):
+        p = self.progreso()
+        p.herramienta("mcp__x__ver")
+        self.assertIn("mirando la bandeja", p.llamadas[0][1]["text"])
+
+    def test_una_herramienta_desconocida_no_filtra_su_nombre(self):
+        p = self.progreso()
+        p.herramienta("mcp__secreto__cosa_privada")
+        self.assertNotIn("secreto", p.llamadas[0][1]["text"])
+
+    def test_la_misma_herramienta_dos_veces_no_reescribe(self):
+        p = self.progreso()
+        p.herramienta("Read")
+        p.ultimo = 0
+        p.herramienta("Read")
+        self.assertEqual(len(p.llamadas), 1)
+
+    def test_mirar_saca_la_herramienta_del_evento(self):
+        p = self.progreso()
+        p.mirar(json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "text", "text": "voy a mirar"},
+            {"type": "tool_use", "name": "Read"}]}}))
+        self.assertIn("leyendo", p.llamadas[0][1]["text"])
+
+    def test_una_linea_que_no_es_json_no_revienta(self):
+        p = self.progreso()
+        p.mirar("esto no es json")
+        p.mirar("")
+        self.assertEqual(p.llamadas, [])
+
+    def test_cerrar_borra_el_mensaje_una_sola_vez(self):
+        p = self.progreso()
+        p.herramienta("Read")
+        p.cerrar()
+        p.cerrar()
+        self.assertEqual([m for m, _ in p.llamadas].count("deleteMessage"), 1)
+
+    def test_sin_telegram_no_intenta_nada(self):
+        p = latido.Progreso({})
+        p.herramienta("Read")      # no debe reventar ni dejar id
+        self.assertIsNone(p.id)
+
+
+class EjecutarElCli(unittest.TestCase):
+    """`ejecutar` reemplaza a subprocess.run sin cambiar el contrato."""
+
+    def test_devuelve_lo_mismo_que_run(self):
+        salida, error, codigo = latido.ejecutar(
+            ["sh", "-c", "echo hola; echo feo >&2; exit 3"], 30)
+        self.assertEqual(salida.strip(), "hola")
+        self.assertEqual(error.strip(), "feo")
+        self.assertEqual(codigo, 3)
+
+    def test_llama_al_callback_por_cada_linea(self):
+        vistas = []
+        latido.ejecutar(["sh", "-c", "echo a; echo b"], 30, vistas.append)
+        self.assertEqual([v.strip() for v in vistas], ["a", "b"])
+
+    def test_pasarse_del_tiempo_sigue_siendo_TimeoutExpired(self):
+        with self.assertRaises(latido.subprocess.TimeoutExpired):
+            latido.ejecutar(["sleep", "5"], 0.3)
+
+    def test_sin_callback_funciona_igual(self):
+        salida, _, codigo = latido.ejecutar(["sh", "-c", "echo solo"], 30)
+        self.assertEqual((salida.strip(), codigo), ("solo", 0))
+
+
+class EmojiEnElAviso(unittest.TestCase):
+    """El emoji viaja dentro del verbo, no lo pone el código."""
+
+    def test_los_verbos_de_serie_traen_emoji(self):
+        self.assertTrue(all(v[0] not in "abcdefghijklmnopqrstuvwxyz"
+                            for v in latido.VERBOS.values()))
+
+    def test_un_verbo_propio_manda_tal_cual(self):
+        p = latido.Progreso({"telegram": {"token": "t", "chat_id": "1"},
+                             "verbos": {"X": "🍋 exprimiendo"}})
+        p.llamadas = []
+        p._api = lambda m, **d: (p.llamadas.append((m, d)),
+                                 {"result": {"message_id": 9}})[1]
+        p.herramienta("X")
+        self.assertEqual(p.llamadas[0][1]["text"], "🍋 exprimiendo…")
