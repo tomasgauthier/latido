@@ -21,6 +21,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import zoneinfo
 
 REPO = pathlib.Path(__file__).resolve().parent
 CONFIG = REPO / "config.json"
@@ -41,26 +42,56 @@ CONSUMO = REPO / "consumo.jsonl"  # un renglón por latido: qué gastó
 ESPEJO = REPO / ".espejo"
 CANDADO = REPO / ".candado"
 API = "https://api.telegram.org/bot{}/{}"
+PUENTE = "http://127.0.0.1:8738/bot{}/{}"   # el de whatsapp/puente.js
 
 
-def canal(cfg):
-    """Por dónde habla. Devuelve token, chat_id y la URL de la API.
+def _wa(cfg):
+    wa = cfg.get("whatsapp") or {}
+    return {**wa, "api": wa.get("api") or PUENTE} if (
+        wa.get("token") and wa.get("chat_id")) else None
 
-    WhatsApp si está pareado, y si no Telegram. No hay una llave para elegir a
-    propósito: un interruptor aparte es una forma más de quedar mudo —lo
-    configuras y no pasa nada porque faltaba prenderlo.
+
+def _tg(cfg):
+    tg = cfg.get("telegram") or {}
+    return {**tg, "api": API} if (tg.get("token") and tg.get("chat_id")) else None
+
+
+def oreja(cfg):
+    """Por dónde escucha. WhatsApp si está pareado, y si no Telegram.
+
+    Es donde Tomás escribe sin pensarlo. Baileys es frágil —la sesión se cae y
+    hay que re-parear— pero esa fragilidad se paga solo del lado de oír: si el
+    puente muere, el reloj sigue hablando igual.
+    """
+    return _wa(cfg) or _tg(cfg) or {"api": API}
+
+
+def boca(cfg):
+    """Por dónde habla. Telegram si está configurado, y si no WhatsApp.
+
+    Al revés que la oreja, y a propósito: el self-chat de WhatsApp está
+    silenciado por diseño, así que una respuesta que sale por ahí no avisa a
+    nadie. Un agente que contesta y no se entera nadie es un agente mudo con
+    pasos extra. Telegram es un bot de verdad y notifica.
+
+    Ninguna de las dos tiene una llave para elegir a propósito: cada una cae a
+    la otra si la primera no está. Un interruptor aparte es una forma más de
+    quedar mudo —lo configuras y no pasa nada porque faltaba prenderlo—, y por
+    eso la preferencia se deduce de lo que hay, no de un booleano.
 
     Los dos hablan la misma API: el puente de `whatsapp/` imita la de Telegram
     justamente para que de acá para abajo nada sepa cuál es cuál.
     """
-    wa = cfg.get("whatsapp") or {}
-    if wa.get("token") and wa.get("chat_id"):
-        return {**wa, "api": wa.get("api") or "http://127.0.0.1:8738/bot{}/{}"}
-    return {**(cfg.get("telegram") or {}), "api": API}
+    return _tg(cfg) or _wa(cfg) or {"api": API}
 
 MESES = ("enero febrero marzo abril mayo junio julio agosto septiembre "
          "octubre noviembre diciembre").split()
 DIAS = "lunes martes miércoles jueves viernes sábado domingo".split()
+# El VPS corre en UTC. Sin esto el modelo cree que es de madrugada cuando es
+# de tarde para el dueño, y cualquier razonamiento sobre "hoy" o "mañana" sale
+# mal. `zoneinfo` y no un offset fijo: Chile tiene horario de verano, así que
+# -3 o -4 quedan mal la mitad del año.
+ZONA_PREDETERMINADA = "America/Santiago"
 
 
 def config():
@@ -240,7 +271,7 @@ def enviar(cfg, texto):
 
 
 def _enviar_uno(cfg, texto):
-    tg = canal(cfg)
+    tg = boca(cfg)
     if not (tg.get("token") and tg.get("chat_id")):
         return False
     # Sin parse_mode a propósito: el prompt exige texto plano, y así un
@@ -265,7 +296,7 @@ def tecleando(cfg, parar):
     llega entera al final, medio minuto o más después. Sin esto el chat se ve
     muerto justo cuando más está trabajando.
     """
-    tg = canal(cfg)
+    tg = boca(cfg)
     if not (tg.get("token") and tg.get("chat_id")):
         return
     datos = urllib.parse.urlencode(
@@ -294,6 +325,10 @@ VERBO_POR_OMISION = "⚙️ trabajando"
 # Cómo se le habla al programa que manda el correo. Configurable como el del
 # modelo: sirve cualquiera que reciba destinatario, asunto y un archivo.
 CORREO_ARGS = ["--para", "{para}", "--asunto", "{asunto}", "--texto", "{cuerpo}"]
+# Cuánto se espera a que el programa de correo salga antes de darlo por
+# colgado. Constante aparte para que una prueba lo pueda achicar y no tenga
+# que esperar el minuto entero.
+CORREO_TIMEOUT = 60
 
 
 class Progreso:
@@ -310,7 +345,7 @@ class Progreso:
     ESPERA = 3.0        # entre ediciones: Telegram limita, y nadie lee más rápido
 
     def __init__(self, cfg):
-        tg = canal(cfg)
+        tg = boca(cfg)
         self.tg = tg if (tg.get("token") and tg.get("chat_id")) else None
         self.verbos = {**VERBOS, **(cfg.get("verbos") or {})}
         self.id = None
@@ -463,7 +498,8 @@ def despachar_correo(cfg):
         cmd = [conf["bin"]] + [reemplazo.get(a, a)
                                for a in (conf.get("args") or CORREO_ARGS)]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            r = subprocess.run(cmd, capture_output=True, text=True,
+                               timeout=CORREO_TIMEOUT)
         except Exception as e:
             return f"CORREO: no salió ({type(e).__name__})"
     finally:
@@ -511,14 +547,27 @@ def devolver(mensajes):
         f.write(SEPARADOR.join(mensajes) + SEPARADOR + pendiente)
 
 
-def ahora():
-    n = datetime.datetime.now()
+def zona(cfg):
+    """La zona horaria del dueño, para todo lo que el latido le cuenta al
+    modelo como "hoy" o "ahora". Configurable (`zona` en config.json);
+    `America/Santiago` si no está la clave."""
+    return zoneinfo.ZoneInfo(cfg.get("zona") or ZONA_PREDETERMINADA)
+
+
+def ahora_dt(cfg):
+    """La hora de ahora, ya en la zona del dueño y no la del reloj del
+    sistema (que en el VPS es UTC)."""
+    return datetime.datetime.now(zona(cfg))
+
+
+def ahora(cfg):
+    n = ahora_dt(cfg)
     return (f"Ahora son las {n:%H:%M} del {DIAS[n.weekday()]} {n.day} de "
             f"{MESES[n.month - 1]} de {n.year}.")
 
 
 def armar_prompt(cfg, mensajes, fuentes=None):
-    partes = [ahora()]
+    partes = [ahora(cfg)]
     # La ruta exacta, no "el archivo salida.txt": el prompt puede venir de otro
     # repositorio y el resto de las rutas que ve el modelo son absolutas. Sin
     # esto escribe la respuesta al lado de la bitácora —que sí lleva ruta
@@ -530,7 +579,7 @@ def armar_prompt(cfg, mensajes, fuentes=None):
         partes.append(f"Tu memoria entre latidos es el archivo "
                       f"`{registro(cfg) / memoria(cfg)}`. Léelo apenas despiertes y "
                       f"reescríbelo antes de dormirte.")
-    bitacora_hoy = registro(cfg) / "bitacora" / f"{datetime.date.today().isoformat()}.md"
+    bitacora_hoy = registro(cfg) / "bitacora" / f"{ahora_dt(cfg).date().isoformat()}.md"
     partes.append(f"Tu bitácora de hoy es el archivo `{bitacora_hoy}`. Ahí queda lo "
                   f"que dijiste en cada latido de este día; la escribe el motor solo, "
                   f"tú no tienes que tocarla. Léela para no repetirte.")
@@ -644,7 +693,13 @@ def apuntar_consumo(gasto):
 
 
 def anotar(cfg, linea):
-    dia = datetime.date.today().isoformat()
+    # En la zona del dueño y no en la del reloj del sistema: es la misma
+    # bitácora que armar_prompt() ya le nombró al modelo (mismo cálculo, para
+    # que el archivo que se le prometió sea el que de verdad se escribe), y es
+    # un diario que el dueño lee día a día — el corte de "hoy" tiene que ser
+    # el de su día, no el de UTC.
+    ahora_ = ahora_dt(cfg)
+    dia = ahora_.date().isoformat()
     bit = registro(cfg) / "bitacora" / f"{dia}.md"
     if not bit.exists():
         # El registro suele terminar en una bóveda con schema propio —Obsidian
@@ -656,7 +711,7 @@ def anotar(cfg, linea):
         with bit.open("a") as f:
             f.write(f"# {dia}\n")
     with bit.open("a") as f:
-        f.write(f"\n## {datetime.datetime.now():%H:%M}\n\n{linea}\n")
+        f.write(f"\n## {ahora_:%H:%M}\n\n{linea}\n")
     # Sin git acá a propósito: un `git add -A` automático barría también lo que
     # el dueño tuviera a medio escribir en el repo. Si quieres el registro
     # versionado, ponlo en una carpeta que ya sea repositorio (una bóveda con

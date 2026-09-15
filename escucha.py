@@ -20,7 +20,7 @@ import time
 import urllib.parse
 import urllib.request
 
-from latido import canal   # por dónde habla: lo decide un solo sitio
+from latido import oreja   # por dónde habla: lo decide un solo sitio
 
 REPO = pathlib.Path(__file__).resolve().parent
 CONFIG = REPO / "config.json"
@@ -54,7 +54,7 @@ def config():
 
 def escuchar():
     cfg = config()
-    tg = canal(cfg)
+    tg = oreja(cfg)
     token, propio = tg.get("token"), str(tg.get("chat_id") or "")
     if not token:
         marcar("sin-token")

@@ -9,6 +9,7 @@ prueba que escriba algo las redirige a una carpeta temporal — si no, esto le
 pisa el config.json y el buzón de verdad al dueño.
 """
 import ast
+import datetime
 import http.client
 import os
 import inspect
@@ -20,6 +21,7 @@ import threading
 import time
 import types
 import unittest
+import zoneinfo
 from http.server import ThreadingHTTPServer
 
 import escucha
@@ -283,7 +285,7 @@ class Puente(unittest.TestCase):
                 self.assertEqual(quedo["telegram"]["token"], "t")
                 self.assertEqual(quedo["cadencia"], 3600)
                 # Sin el bloque, el latido vuelve solo a Telegram.
-                self.assertEqual(latido.canal(quedo)["api"], latido.API)
+                self.assertEqual(latido.oreja(quedo)["api"], latido.API)
             finally:
                 (servidor.CONFIG, servidor.SESION, servidor.QR,
                  servidor.lc, servidor.desvincular_proceso) = crudo
@@ -325,36 +327,75 @@ class Puente(unittest.TestCase):
 
 
 class Canal(unittest.TestCase):
-    """Por dónde habla. Elegir mal es quedar mudo sin que nada se vea roto."""
+    """Por dónde oye y por dónde habla. Elegir mal es quedar mudo o sordo sin
+    que nada se vea roto — que es la falla que este proyecto existe para evitar.
+
+    Las dos van al revés a propósito: se oye donde Tomás escribe sin pensarlo
+    (WhatsApp) y se habla donde de verdad le llega una notificación (Telegram),
+    porque el self-chat de WhatsApp está silenciado por diseño.
+    """
 
     TG = {"token": "t", "chat_id": "1"}
     WA = {"token": "w", "chat_id": "56912345678@s.whatsapp.net"}
+    MEDIAS = ({"token": "w", "chat_id": ""}, {"token": "", "chat_id": "x"}, {})
 
-    def test_sin_whatsapp_sigue_siendo_telegram(self):
-        c = latido.canal({"telegram": self.TG})
+    # --- la oreja ---
+
+    def test_oreja_sin_whatsapp_escucha_telegram(self):
+        c = latido.oreja({"telegram": self.TG})
         self.assertEqual(c["api"], latido.API)
         self.assertEqual(c["chat_id"], "1")
 
-    def test_con_whatsapp_pareado_manda_whatsapp(self):
-        c = latido.canal({"telegram": self.TG, "whatsapp": self.WA})
+    def test_oreja_con_whatsapp_pareado_escucha_whatsapp(self):
+        c = latido.oreja({"telegram": self.TG, "whatsapp": self.WA})
         self.assertIn("127.0.0.1", c["api"])
         self.assertEqual(c["chat_id"], self.WA["chat_id"])
 
-    def test_un_whatsapp_a_medio_parear_no_secuestra_el_canal(self):
+    def test_un_whatsapp_a_medio_parear_no_secuestra_la_oreja(self):
         # Es el bloque que trae config.example.json: existe y está vacío. Si
-        # ganara, el latido hablaría a un puente que no está y se quedaría
-        # mudo — el peor resultado, porque se ve igual que uno callado.
-        for medias in ({"token": "w", "chat_id": ""}, {"token": "", "chat_id": "x"}, {}):
-            c = latido.canal({"telegram": self.TG, "whatsapp": medias})
-            self.assertEqual(c["api"], latido.API, medias)
+        # ganara, la oreja sondearía un puente que no está y quedaría sorda —
+        # el peor resultado, porque se ve igual que una que no oye nada.
+        for medias in self.MEDIAS:
+            self.assertEqual(latido.oreja({"telegram": self.TG,
+                                           "whatsapp": medias})["api"],
+                             latido.API, medias)
 
-    def test_sin_nada_configurado_no_revienta(self):
-        self.assertFalse(latido.canal({}).get("token"))
+    # --- la boca ---
 
-    def test_la_oreja_pregunta_por_donde_habla_el_latido(self):
-        # Dos definiciones de "por dónde" es una de más: la oreja escucharía
-        # en Telegram mientras el latido contesta por WhatsApp.
-        self.assertIs(escucha.canal, latido.canal)
+    def test_boca_prefiere_telegram_aunque_whatsapp_este_pareado(self):
+        # El corazón del asunto, y lo contrario de lo que hace la oreja: con
+        # los dos puestos, la respuesta sale por el bot, que notifica.
+        c = latido.boca({"telegram": self.TG, "whatsapp": self.WA})
+        self.assertEqual(c["api"], latido.API)
+        self.assertEqual(c["chat_id"], "1")
+
+    def test_boca_sin_telegram_no_queda_muda_y_habla_por_whatsapp(self):
+        c = latido.boca({"whatsapp": self.WA})
+        self.assertIn("127.0.0.1", c["api"])
+        self.assertEqual(c["chat_id"], self.WA["chat_id"])
+
+    def test_un_telegram_a_medio_poner_no_secuestra_la_boca(self):
+        for medias in self.MEDIAS:
+            self.assertIn("127.0.0.1",
+                          latido.boca({"telegram": medias,
+                                       "whatsapp": self.WA})["api"], medias)
+
+    # --- las dos ---
+
+    def test_sin_nada_configurado_ninguna_revienta(self):
+        self.assertFalse(latido.oreja({}).get("token"))
+        self.assertFalse(latido.boca({}).get("token"))
+
+    def test_con_un_solo_canal_oreja_y_boca_coinciden(self):
+        # Nadie queda incomunicado por tener la mitad: con solo Telegram las
+        # dos son Telegram, con solo WhatsApp las dos son WhatsApp.
+        for solo in ({"telegram": self.TG}, {"whatsapp": self.WA}):
+            self.assertEqual(latido.oreja(solo)["api"], latido.boca(solo)["api"], solo)
+
+    def test_la_oreja_de_escucha_es_la_misma_del_latido(self):
+        # Una sola definición de "por dónde se oye". La boca puede diferir —
+        # eso es el diseño—, pero dos orejas distintas serían un bug.
+        self.assertIs(escucha.oreja, latido.oreja)
 
 
 class Entrega(unittest.TestCase):
@@ -723,3 +764,148 @@ class CorreoSinShell(unittest.TestCase):
         latido.despachar_correo(self.cfg)
         self.assertEqual(
             set(pathlib.Path(tempfile.gettempdir()).glob("latido-correo-*")), antes)
+
+
+class CorreoQueFalla(unittest.TestCase):
+    """Un correo que no sale —código de salida distinto de cero, o el programa
+    colgado— no puede tumbar el latido ni dejar correo.txt para que el
+    próximo latido lo reintente para siempre."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.carpeta = pathlib.Path(self.tmp.name)
+        self.correo = self.carpeta / "correo.txt"
+        self.original = latido.CORREO
+        latido.CORREO = self.correo
+        self.addCleanup(setattr, latido, "CORREO", self.original)
+        self.cfg = {"correo": {
+            "bin": sys.executable,
+            "args": [],
+            "destinos": {"personal": "yo@casa.cl"}}}
+
+    def escribir(self, texto):
+        self.correo.write_text(texto, encoding="utf-8")
+
+    def script(self, nombre, contenido):
+        ruta = self.carpeta / nombre
+        ruta.write_text(contenido, encoding="utf-8")
+        return ruta
+
+    def achicar_timeout(self, segundos=0.2):
+        original = latido.CORREO_TIMEOUT
+        latido.CORREO_TIMEOUT = segundos
+        self.addCleanup(setattr, latido, "CORREO_TIMEOUT", original)
+
+    def test_codigo_de_salida_no_cero_no_revienta_y_consume_el_correo(self):
+        falso = self.script(
+            "falla.py",
+            "import sys\nsys.stderr.write('reventó feo')\nsys.exit(1)\n")
+        self.cfg["correo"]["args"] = [str(falso)]
+        self.escribir("Para: personal\nAsunto: hola\n\ncuerpo\n")
+
+        aviso = latido.despachar_correo(self.cfg)  # no debe lanzar
+
+        self.assertIn("no salió", aviso)
+        self.assertIn("reventó feo", aviso)
+        self.assertFalse(self.correo.exists())  # se consumió, no reintenta
+
+    def test_el_timeout_no_revienta_y_consume_el_correo(self):
+        self.achicar_timeout()
+        colgado = self.script("cuelga.py", "import time\ntime.sleep(30)\n")
+        self.cfg["correo"]["args"] = [str(colgado)]
+        self.escribir("Para: personal\nAsunto: hola\n\ncuerpo\n")
+
+        aviso = latido.despachar_correo(self.cfg)  # no debe lanzar
+
+        self.assertIn("no salió", aviso)
+        self.assertIn("TimeoutExpired", aviso)
+        self.assertFalse(self.correo.exists())  # se consumió, no reintenta
+
+    def test_ninguno_de_los_dos_fallos_deja_el_temporal_del_cuerpo_tirado(self):
+        antes = set(pathlib.Path(tempfile.gettempdir()).glob("latido-correo-*"))
+
+        falso = self.script("falla.py", "import sys\nsys.exit(1)\n")
+        self.cfg["correo"]["args"] = [str(falso)]
+        self.escribir("Para: personal\nAsunto: hola\n\ncuerpo\n")
+        latido.despachar_correo(self.cfg)
+
+        self.achicar_timeout()
+        colgado = self.script("cuelga.py", "import time\ntime.sleep(30)\n")
+        self.cfg["correo"]["args"] = [str(colgado)]
+        self.escribir("Para: personal\nAsunto: hola\n\ncuerpo\n")
+        latido.despachar_correo(self.cfg)
+
+        self.assertEqual(
+            set(pathlib.Path(tempfile.gettempdir()).glob("latido-correo-*")), antes)
+
+
+class HoraDelDueno(unittest.TestCase):
+    """El VPS corre en UTC. ahora() (y lo que se deriva de ella) le tienen que
+    hablar al modelo en la hora del dueño, no en la del reloj del sistema."""
+
+    def test_zona_por_omision_es_santiago(self):
+        self.assertEqual(latido.zona({}).key, "America/Santiago")
+
+    def test_zona_configurada_se_respeta(self):
+        self.assertEqual(latido.zona({"zona": "Europe/Madrid"}).key,
+                          "Europe/Madrid")
+
+    def test_ahora_dt_convierte_con_una_zona_fija_y_conocida(self):
+        # Etc/GMT+5 es un offset fijo todo el año (sin horario de verano):
+        # sirve para probar la conversión sin depender de qué día es hoy ni
+        # de si Chile está en horario de verano.
+        n = latido.ahora_dt({"zona": "Etc/GMT+5"})
+        self.assertEqual(n.utcoffset(), datetime.timedelta(hours=-5))
+        self.assertIsNotNone(n.tzinfo)  # no es un datetime ingenuo
+
+    def test_ahora_reporta_la_hora_ya_convertida_a_esa_zona(self):
+        # Instante fijo y conocido (no la hora real del reloj): jueves 15 de
+        # enero de 2026, 21:30 en Etc/GMT+5. Se reemplaza ahora_dt(), no
+        # datetime.datetime, para no tocar el reloj global del proceso.
+        original = latido.ahora_dt
+        latido.ahora_dt = lambda cfg: datetime.datetime(
+            2026, 1, 15, 21, 30, tzinfo=zoneinfo.ZoneInfo(cfg["zona"]))
+        self.addCleanup(setattr, latido, "ahora_dt", original)
+
+        texto = latido.ahora({"zona": "Etc/GMT+5"})
+
+        self.assertEqual(texto,
+                          "Ahora son las 21:30 del jueves 15 de enero de 2026.")
+
+    def test_zoneinfo_y_no_un_offset_fijo_hardcodeado(self):
+        # Chile tiene horario de verano: la misma hora UTC cae en horas de
+        # reloj distintas en enero (verano) y julio (invierno) en Santiago.
+        # Un offset fijo de -3 o -4 en el código quedaría mal la mitad del
+        # año; con zoneinfo, la conversión la resuelve la propia librería.
+        santiago = zoneinfo.ZoneInfo("America/Santiago")
+        verano = datetime.datetime(2026, 1, 15, 12, 0,
+                                    tzinfo=datetime.timezone.utc)
+        invierno = datetime.datetime(2026, 7, 15, 12, 0,
+                                      tzinfo=datetime.timezone.utc)
+        self.assertNotEqual(verano.astimezone(santiago).utcoffset(),
+                             invierno.astimezone(santiago).utcoffset())
+
+
+class BitacoraEnHoraLocal(unittest.TestCase):
+    """El nombre de archivo que armar_prompt() le promete al modelo tiene que
+    ser el mismo que anotar() de verdad escribe — si el corte de "hoy" sale
+    de dos relojes distintos, dejan de coincidir cerca de la medianoche."""
+
+    def test_la_ruta_que_ve_el_modelo_es_la_que_escribe_anotar(self):
+        # Instante fijo: si cada llamado leyera la hora real por su cuenta,
+        # una corrida que cruzara la medianoche podría hacer que el prompt y
+        # la bitácora terminen calculando "hoy" para días distintos.
+        original = latido.ahora_dt
+        latido.ahora_dt = lambda cfg: datetime.datetime(
+            2026, 1, 15, 23, 30, tzinfo=zoneinfo.ZoneInfo(cfg["zona"]))
+        self.addCleanup(setattr, latido, "ahora_dt", original)
+
+        with tempfile.TemporaryDirectory() as d:
+            cfg = {"registro": d, "zona": "Etc/GMT+5"}
+            texto = latido.armar_prompt(cfg, [])
+            latido.anotar(cfg, "algo")
+
+            esperado = pathlib.Path(d) / "bitacora" / "2026-01-15.md"
+            self.assertIn(str(esperado), texto)
+            self.assertTrue(esperado.exists())
