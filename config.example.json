@@ -1,5 +1,6 @@
 {
   "cadencia": 86400,
+  "zona": "America/Santiago",
   "modelo": "sonnet",
   "prompt": "",
   "memoria": "estado.md",
